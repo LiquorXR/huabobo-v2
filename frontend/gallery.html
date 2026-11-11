@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数字化展厅 — 指间塑</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <img src="images/logo.png" alt="指间塑 Logo" class="brand-logo" width="44" height="44">
+        <div class="brand-text">
+          <span class="brand-name">指间塑</span>
+          <span class="brand-tag">胶东花饽饽</span>
+        </div>
+      </a>
+      <div class="header-right">
+        <button class="nav-toggle" type="button" aria-label="打开菜单">
+          <span></span><span></span><span></span>
+        </button>
+        <nav class="main-nav">
+          <a href="index.html">首页</a>
+          <a href="huayang.html">馒有花样</a>
+          <a href="digital.html">数字化体验</a>
+          <a href="gallery.html">数字化展厅</a>
+          <a href="artisans.html">合作手艺人</a>
+          <a href="charity.html">公益案例</a>
+          <a href="news.html">新闻资讯</a>
+          <a href="about.html">关于我们</a>
+        </nav>
+        <div class="header-user">
+          <a href="profile.html?id=me" class="nav-mine">我的</a>
+          <div class="header-auth-group">
+            <a href="login.html" class="btn-auth btn-login">登录</a>
+            <a href="register.html" class="btn-auth btn-register">注册</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <h1>数字化展厅</h1>
+        <p>注册用户在「数字化体验」中 DIY 完成的作品，发布到社区后集中展示于此。点击作者可进入其 DIY 作品集主页。</p>
+        <a href="digital.html" class="btn btn-outline page-hero-cta">我也要 DIY 创作 →</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="gallery-search" role="search">
+          <label class="gallery-search-label" for="gallery-search-input">搜索作品或作者</label>
+          <div class="gallery-search-row">
+            <span class="gallery-search-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+            </span>
+            <input
+              type="search"
+              id="gallery-search-input"
+              class="gallery-search-input"
+              placeholder="输入作品名称或作者昵称，如：锦鲤、小胶东"
+              autocomplete="off"
+              enterkeyhint="search"
+            >
+            <button type="button" id="gallery-search-clear" class="gallery-search-clear" hidden aria-label="清空搜索">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 6 6 18"></path>
+                <path d="m6 6 12 12"></path>
+              </svg>
+            </button>
+          </div>
+          <p class="gallery-search-hint" id="gallery-search-hint" aria-live="polite"></p>
+        </div>
+
+        <div class="gallery-masonry" id="gallery-masonry">
+          <p class="section-desc">正在加载社区作品…</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <div class="brand-name">指间塑</div>
+        <p>胶东花饽饽文化传播平台</p>
+      </div>
+      <div class="footer-col">
+        <h4>探索</h4>
+        <a href="digital.html">数字化体验</a>
+        <a href="gallery.html">数字化展厅</a>
+        <a href="artisans.html">合作手艺人</a>
+        <a href="charity.html">公益案例</a>
+      </div>
+      <div class="footer-col">
+        <h4>更多</h4>
+        <a href="news.html">新闻资讯</a>
+        <a href="about.html">关于我们</a>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <p>© 2026 指间塑</p>
+    </div>
+  </footer>
+
+  <script src="js/site-base.js"></script>
+  <script src="js/local-http.js"></script>
+  <script>
+    (function () {
+      if (location.protocol === 'file:' && window.ZJS && ZJS.LocalHttp) {
+        ZJS.LocalHttp.trySwitchCurrentPage();
+      }
+    })();
+  </script>
+  <script src="js/i18n.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/api-config.js?v=20260521"></script>
+  <script src="js/db-seed.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/api-remote.js?v=20260520" defer></script>
+  <script src="js/work-engage.js?v=20260520" defer></script>
+  <script src="js/gallery-page.js?v=20260520" defer></script>
+  <script src="js/main.js" defer></script>
+</body>
+</html>

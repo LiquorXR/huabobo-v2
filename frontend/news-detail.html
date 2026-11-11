@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新闻详情 — 指间塑</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <img src="images/logo.png" alt="指间塑 Logo" class="brand-logo" width="44" height="44">
+        <div class="brand-text">
+          <span class="brand-name">指间塑</span>
+          <span class="brand-tag">胶东花饽饽</span>
+        </div>
+      </a>
+      <div class="header-right">
+        <nav class="main-nav">
+          <a href="index.html">首页</a>
+          <a href="news.html">新闻资讯</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <article class="section">
+      <div class="container" style="max-width: 720px;">
+        <a href="news.html" class="btn btn-outline btn-sm" style="margin-bottom: 20px;">← 返回列表</a>
+        <div id="news-detail">
+          <p class="section-desc">加载中…</p>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-bottom"><p>© 2026 指间塑</p></div>
+  </footer>
+
+  <script src="js/site-base.js"></script>
+  <script src="js/api-config.js?v=20260521"></script>
+  <script>
+    (function () {
+      var id = new URLSearchParams(location.search).get('id');
+      var root = document.getElementById('news-detail');
+      if (!id) {
+        root.innerHTML = '<p>缺少文章 ID</p>';
+        return;
+      }
+      var base = window.ZJS && ZJS.API_BASE ? ZJS.API_BASE.replace(/\/$/, '') : '';
+      if (!base) {
+        root.innerHTML = '<p>请配置 api-config.js</p>';
+        return;
+      }
+      fetch(base + '/api/news/' + encodeURIComponent(id))
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!res.ok) {
+            root.innerHTML = '<p>文章不存在</p>';
+            return;
+          }
+          var n = res.data;
+          document.title = n.title + ' — 指间塑';
+          root.innerHTML =
+            '<header class="news-detail-header">' +
+            '<h1 class="news-detail-title">' + n.title + '</h1>' +
+            '<time class="news-date news-detail-date">' + (n.publishedAt || '') + '</time>' +
+            '</header>' +
+            (n.image ? '<figure class="news-detail-cover"><img src="' + n.image + '" alt=""></figure>' : '') +
+            (n.summary ? '<p class="news-detail-summary">' + n.summary + '</p>' : '') +
+            '<div class="news-content-body">' + (n.contentHtml || n.content || '') + '</div>';
+        })
+        .catch(function () {
+          root.innerHTML = '<p>加载失败</p>';
+        });
+    })();
+  </script>
+</body>
+</html>

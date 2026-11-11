@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="wall" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f5efe6"/>
+      <stop offset="55%" stop-color="#e8dcc8"/>
+      <stop offset="100%" stop-color="#d4c4a8"/>
+    </linearGradient>
+    <radialGradient id="light" cx="50%" cy="18%" r="55%">
+      <stop offset="0%" stop-color="#fffaf2" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#fffaf2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#wall)"/>
+  <rect width="1920" height="1080" fill="url(#light)"/>
+  <rect y="780" width="1920" height="300" fill="#c9b896" opacity="0.35"/>
+  <text x="960" y="1020" text-anchor="middle" font-family="KaiTi, STKaiti, serif" font-size="28" fill="#8b7355" opacity="0.55">工作台背景占位图 · 可替换为 studio-workshop-bg.jpg</text>
+</svg>

@@ -1,0 +1,154 @@
+指间塑 — 图片放置说明
+========================
+请将所有图片放在本目录 images/ 下，文件名需与下方完全一致。
+
+【架构说明】用户/手艺人/作品不再为每人单独建 HTML，统一使用：
+  profile.html?id=用户ID   work.html?id=作品ID
+详见项目根目录 ARCHITECTURE.md
+
+【性能提示】单张建议压缩到 500KB 以内；轮播图宽度 1920px 即可，不必用原图直传，否则页面会明显变慢。
+
+【全站通用】
+- logo.png              平台 Logo（建议 200×200px，透明底 PNG）
+
+【首页 index.html — 轮播图】
+- carousel-1.jpg        轮播第1张：花饽饽精品特写（建议 1920×720）
+- carousel-2.jpg        轮播第2张：节庆摆盘场景（建议 1920×720）
+- carousel-3.jpg        轮播第3张：手艺人制作过程（建议 1920×720）
+- carousel-4.jpg        轮播第4张：数字化/展览场景（建议 1920×720）
+
+【首页 index.html】
+- hero-main.jpg         首页主视觉：花饽饽特写或制作过程（建议 1200×900）
+- culture-origin.jpg    文化渊源配图（建议 800×600）
+- craft-process.jpg     制作工艺配图（建议 800×600）
+- modern-value.jpg      当代价值配图（建议 800×600）
+- gallery-1.jpg         图鉴卡片1：寿桃类花饽饽（建议 600×400）
+- gallery-2.jpg         图鉴卡片2：鲤鱼/吉祥造型（建议 600×400）
+- gallery-3.jpg         图鉴卡片3：节庆场景摆盘（建议 600×400）
+
+【我的主页 my.html】
+- author-user-me.jpg     我的头像（建议 200×200）
+- my-work-1.jpg          我的作品：踏青小花饽饽
+- my-work-2.jpg          我的作品：迷你寿桃试作
+- my-work-3.jpg          我的作品：福字书签饽饽
+
+【创作者主页 author-1.html ~ author-9.html】
+- author-user-1.jpg     头像：@小胶东（建议 200×200）
+- author-user-2.jpg     头像：@面面驾驶人
+- author-user-3.jpg     头像：@国潮青年
+- author-user-4.jpg     头像：@捏面小妹
+- author-user-5.jpg     头像：@胶州新娘
+- author-user-6.jpg     头像：@兔兔打工
+- author-user-7.jpg     头像：@花开胶东
+- author-user-8.jpg     头像：@亲子工作室
+- author-user-9.jpg     头像：@年味制造局
+
+【数字化展厅 gallery.html】
+- gallery-work-1.jpg    社区作品：锦鲤跃春（建议 600×800 竖图）
+- gallery-work-2.jpg    社区作品：寿桃福满（建议 600×600）
+- gallery-work-3.jpg    社区作品：龙年吉祥盘（建议 800×500 横图）
+- gallery-work-4.jpg    社区作品：樱花福袋（建议 600×800）
+- gallery-work-5.jpg    社区作品：婚礼双凤（建议 600×600）
+- gallery-work-6.jpg    社区作品：萌兔迎秋（建议 800×500）
+- gallery-work-7.jpg    社区作品：牡丹富贵（建议 600×600）
+- gallery-work-8.jpg    社区作品：海底童梦（建议 600×800）
+- gallery-work-9.jpg    社区作品：春节福字墙（建议 600×600）
+
+【面塑 DIY 工作台 studio.html】
+- studio-workshop-bg.jpg  工作台主视区背景（建议 1920×1080，横图；上传后覆盖占位）
+  说明：未上传前使用同目录 studio-workshop-bg.svg 占位
+
+【数字化体验 digital.html】
+- digital-ar.jpg        AR 扫描体验示意（建议 800×600）
+- digital-3d.jpg        3D 模型展示示意（建议 800×600）
+- digital-vr.jpg        虚拟展厅示意（建议 800×600）
+
+【合作手艺人 artisans.html】
+- artisan-1.jpg         手艺人头像：王德厚（建议 400×400）
+- artisan-2.jpg         手艺人头像：李桂芬（建议 400×400）
+- artisan-3.jpg         手艺人头像：张海涛（建议 400×400）
+
+【王德厚详情 artisan-wang.html】
+- work-wang-1.jpg       作品：九龙祝寿饽饽（建议 600×450）
+- work-wang-2.jpg       作品：百寿图组合（建议 600×450）
+- work-wang-3.jpg       作品：龙凤呈祥糕（建议 600×450）
+- wechat-wang.jpg       微信二维码（建议 400×400）
+
+【李桂芬详情 artisan-li.html】
+- work-li-1.jpg         作品：锦鲤迎春（建议 600×450）
+- work-li-2.jpg         作品：牡丹富贵糕（建议 600×450）
+- work-li-3.jpg         作品：新春福字饽饽（建议 600×450）
+- wechat-li.jpg         微信二维码（建议 400×400）
+
+【张海涛详情 artisan-zhang.html】
+- work-zhang-1.jpg      作品：IP 联名礼盒（建议 600×450）
+- work-zhang-2.jpg      作品：龙年限定款（建议 600×450）
+- work-zhang-3.jpg      作品：快闪店定制款（建议 600×450）
+- wechat-zhang.jpg      微信二维码（建议 400×400）
+
+【公益案例 charity.html】
+- charity-1.jpg         校园非遗课堂（建议 800×500）
+- charity-2.jpg         社区敬老送饽饽（建议 800×500）
+- charity-3.jpg         乡村工坊扶持（建议 800×500）
+
+【新闻资讯 news.html】
+- news-1.jpg            新闻配图1（建议 600×400）
+- news-2.jpg            新闻配图2（建议 600×400）
+- news-3.jpg            新闻配图3（建议 600×400）
+
+【关于我们 about.html】
+- about-team.jpg        团队或工作坊合影（建议 1000×600）
+
+【馒有花样 huayang.html — 模块③ 人生时间轴照片】
+放入 images/timeline/ 目录，详见 images/timeline/README.txt
+
+时间节点：node-birth.jpg、node-wedding.jpg、node-longevity.jpg、node-qiaoqian.jpg、
+          node-spring.jpg、node-qingming.jpg、node-duanwu.jpg、node-qixi.jpg
+
+【馒有花样 huayang.html — 模块② 非遗传承人头像】
+放入 images/inheritor/ 目录，命名 inheritor-{区县ID}-{序号}.jpg
+详见 images/inheritor/README.txt
+
+示例：inheritor-zhifu-1.jpg（芝罘区第1位）、inheritor-longkou-1.jpg（龙口市第1位）
+
+【馒有花样 huayang.html — 烟台市区地图 SVG】
+- 完整地图由 scripts/build-yantai-map-svg.js 从 GeoJSON 生成，输出 images/yantai-map-full.svg
+- 重新生成：node scripts/build-yantai-map-svg.js
+
+【馒有花样 huayang.html — 全国地图 SVG】
+- 完整地图由 scripts/build-china-map-svg.js 从 GeoJSON 生成，输出 images/china-map-full.svg
+- 重新生成命令：node scripts/build-china-map-svg.js
+
+【馒有花样 huayang.html — 全国六省地图右侧介绍图】
+- region-gansu.jpg      甘肃省花饽饽地域实拍（建议 800×500）
+- region-shaanxi.jpg    陕西省
+- region-shanxi.jpg     山西省
+- region-hebei.jpg      河北省
+- region-henan.jpg      河南省
+- region-shandong.jpg   山东省（胶东核心产区，建议优先准备）
+
+【馒有花样 huayang.html — 模块④ 制作步骤示意图（放入 images/steps/）】
+详见 images/steps/README.txt。无图时显示占位。
+
+- step-xuancai.jpg      选材
+- step-huomian.jpg      和面
+- step-kemou.jpg        刻模
+- step-zhiyangzi.jpg    制样子
+- step-ganpian.jpg      擀片儿
+- step-chengxing.jpg    成型
+- step-zhanhua.jpg      粘花
+
+【馒有花样 huayang.html — 模块⑤ 制作工具图标（可选）】
+将图片放入本目录 images/，保持下列文件名即可自动显示；也可在 js/huayang-tools.js 的 TOOLS 中修改 image 字段。无图时显示 emoji。
+
+- tool-shuzi.png         梳子
+- tool-jiandao.png       剪刀
+- tool-xiaodao.png       小刀
+- tool-muzi.png          模子
+- tool-kedao.png         刻刀
+- tool-shaozi.png        勺子
+- tool-ganmianzhang.png  擀面杖
+- tool-hongzao.png       红枣
+- tool-douzi.png         豆子装饰
+
+【3D 模型见 models/tools/ 目录 README.txt】

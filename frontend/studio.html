@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>面塑 DIY 工作台 — 指间塑</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/studio.css?v=20261029">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#c41e3a', dark: '#9e1830' }
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="studio-page">
+
+  <div id="studio-app" class="studio-app">
+
+    <header class="studio-header">
+      <div class="studio-header__left">
+        <a href="digital.html" class="studio-back" aria-label="返回数字化体验">
+          <i data-lucide="arrow-left"></i>
+          <span>返回</span>
+        </a>
+        <div class="studio-title-wrap">
+          <p class="studio-title-en" aria-hidden="true">DIY STUDIO</p>
+          <h1 class="studio-title-art">
+            <span class="studio-title-main">面塑</span>
+            <span class="studio-title-accent">DIY</span>
+            <span class="studio-title-main">工作台</span>
+          </h1>
+          <p class="studio-title-sub">指间捏塑 · 指尖传艺</p>
+        </div>
+      </div>
+      <div id="studio-top-actions" class="studio-header__actions">
+        <button type="button" id="btn-save-model" class="studio-btn studio-btn--ghost">
+          <i data-lucide="save"></i>
+          <span>保存模型</span>
+        </button>
+        <button type="button" id="btn-share-gallery" class="studio-btn studio-btn--soft">
+          <i data-lucide="share-2"></i>
+          <span>分享到展厅</span>
+        </button>
+        <button type="button" id="btn-export-toggle" class="studio-btn studio-btn--primary">
+          <i data-lucide="download"></i>
+          <span>模型导出</span>
+        </button>
+        <button type="button" id="btn-ar" class="studio-btn studio-btn--accent">
+          <i data-lucide="scan-line"></i>
+          <span>AR 体验</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="studio-viewport" class="studio-viewport">
+      <video id="studio-ar-video" class="studio-ar-video" playsinline muted autoplay></video>
+      <canvas id="studio-canvas"></canvas>
+
+      <div class="studio-hint-card">
+        <p class="studio-hint-card__title">
+          <i data-lucide="mouse-pointer-2"></i>
+          操作提示
+        </p>
+        <p class="studio-hint-card__text">空白处拖拽旋转视角 · 按住模型拖拽可前后/左右/上下平移（Shift 锁定上下）</p>
+        <p class="studio-hint-card__muted">触屏双指捏合缩放 · 右下角按钮旋转 / 放大缩小</p>
+      </div>
+
+      <div class="studio-scale-btns" role="group" aria-label="模型旋转与缩放">
+        <button type="button" id="btn-model-rotate-x" class="studio-scale-btn" title="绕X轴旋转模型">
+          <i data-lucide="rotate-3d"></i>
+          <span>绕X轴</span>
+        </button>
+        <button type="button" id="btn-model-rotate-y" class="studio-scale-btn" title="绕Y轴旋转模型">
+          <i data-lucide="rotate-3d"></i>
+          <span>绕Y轴</span>
+        </button>
+        <button type="button" id="btn-model-rotate-z" class="studio-scale-btn" title="绕Z轴旋转模型">
+          <i data-lucide="rotate-3d"></i>
+          <span>绕Z轴</span>
+        </button>
+        <span class="studio-scale-btns__split" aria-hidden="true"></span>
+        <button type="button" id="btn-model-scale-up" class="studio-scale-btn" title="放大模型">
+          <i data-lucide="zoom-in"></i>
+          <span>放大</span>
+        </button>
+        <button type="button" id="btn-model-scale-down" class="studio-scale-btn" title="缩小模型">
+          <i data-lucide="zoom-out"></i>
+          <span>缩小</span>
+        </button>
+      </div>
+
+      <p id="studio-board-label" class="studio-board-label">仿真面食案板工作台</p>
+
+      <div id="studio-real-cam" class="studio-real-cam" hidden>
+        <video id="studio-real-cam-video" class="studio-real-cam__video" playsinline webkit-playsinline muted autoplay></video>
+        <div class="studio-real-cam__frame" aria-hidden="true"></div>
+        <p class="studio-real-cam__hint">对准真实实物花饽饽 · 点确定拍摄</p>
+        <div class="studio-real-cam__bar">
+          <button type="button" id="btn-real-cam-cancel" class="studio-btn studio-btn--ghost">取消</button>
+          <button type="button" id="btn-real-cam-confirm" class="studio-btn studio-btn--primary">确定</button>
+        </div>
+      </div>
+      <img id="studio-real-freeze" class="studio-real-freeze" alt="实物花饽饽定格" hidden>
+    </main>
+
+    <aside class="studio-sidebar studio-sidebar--left">
+      <section class="studio-panel-section studio-human-section">
+        <div class="studio-human" id="studio-human">
+          <img
+            src="images/studio-digital-human.jpg"
+            alt="AI非遗数字传承人饽饽小匠"
+            class="studio-human__img"
+            draggable="false"
+          >
+          <div class="studio-human__badge">AI 非遗数字人</div>
+        </div>
+        <p id="studio-human-speech" class="studio-human__speech" hidden aria-live="polite"></p>
+        <div id="human-actions-idle" class="studio-human__actions">
+          <button type="button" id="btn-human-start" class="studio-btn studio-btn--primary studio-btn--block">
+            <i data-lucide="play"></i>
+            <span>开始数字人交互</span>
+          </button>
+        </div>
+        <div id="human-actions-choose" class="studio-human__actions" hidden>
+          <button type="button" id="btn-human-digital" class="studio-btn studio-btn--primary studio-btn--block">
+            <i data-lucide="box"></i>
+            <span>点评数字版花饽饽</span>
+          </button>
+          <p class="studio-human__hint">评案板上的 3D 模型：造型、层次、配色</p>
+          <button type="button" id="btn-human-real" class="studio-btn studio-btn--soft studio-btn--block">
+            <i data-lucide="camera"></i>
+            <span>点评真实实物花饽饽</span>
+          </button>
+          <p class="studio-human__hint">打开摄像头实拍真饽饽，识别纹样后再点评</p>
+        </div>
+        <div id="human-actions-wrapup" class="studio-human__actions" hidden>
+          <button type="button" id="btn-human-continue" class="studio-btn studio-btn--primary studio-btn--block">
+            <i data-lucide="rotate-cw"></i>
+            <span>继续点评</span>
+          </button>
+          <button type="button" id="btn-human-end" class="studio-btn studio-btn--ghost studio-btn--block">
+            <i data-lucide="square"></i>
+            <span>结束交互</span>
+          </button>
+        </div>
+        <div id="human-actions-real-followup" class="studio-human__actions" hidden>
+          <button type="button" id="btn-human-folk" class="studio-btn studio-btn--primary studio-btn--block">
+            <i data-lucide="book-open"></i>
+            <span>讲解民俗寓意</span>
+          </button>
+          <button type="button" id="btn-human-real-end" class="studio-btn studio-btn--ghost studio-btn--block">
+            <i data-lucide="square"></i>
+            <span>结束评价</span>
+          </button>
+        </div>
+      </section>
+      <section class="studio-panel-section studio-loaded-section">
+        <h2 class="studio-section-title">
+          <i data-lucide="layers"></i>
+          已加载模型
+        </h2>
+        <div id="loaded-model-list" class="studio-loaded-list studio-scroll-area"></div>
+      </section>
+    </aside>
+
+    <aside class="studio-sidebar studio-sidebar--right">
+      <section class="studio-panel-section studio-model-section">
+        <h2 class="studio-section-title">
+          <i data-lucide="boxes"></i>
+          花饽饽模型库
+        </h2>
+        <div id="model-list" class="studio-category-list studio-scroll-area"></div>
+        <p class="studio-panel-note studio-model-section__note">
+          <i data-lucide="server"></i>
+          点击分类，在弹窗中拖模型到中间案板
+        </p>
+      </section>
+      <section class="studio-panel-section studio-color-section">
+        <h2 class="studio-section-title">
+          <i data-lucide="palette"></i>
+          配色 · 食材天然染
+        </h2>
+        <p class="studio-panel-desc studio-color-section__desc">红·黄·蓝·绿四系，每色对应一种食材，可选深浅两档。</p>
+        <div class="studio-color-palette-scroll studio-scroll-area">
+          <div id="color-palette" class="studio-color-palette"></div>
+        </div>
+      </section>
+    </aside>
+
+    <footer class="studio-footer">
+      <span id="studio-status">就绪</span>
+      <span id="studio-hint-status">从右侧拖模型到案板 · 可开始数字人交互</span>
+    </footer>
+  </div>
+
+  <div id="studio-library-dialog" class="studio-dialog" aria-hidden="true">
+    <div class="studio-dialog__panel studio-dialog__panel--library" role="dialog" aria-labelledby="library-dialog-title">
+      <button type="button" id="library-dialog-close" class="studio-dialog__close" aria-label="关闭">
+        <i data-lucide="x"></i>
+      </button>
+      <div class="studio-dialog__head">
+        <h3 id="library-dialog-title" class="studio-dialog__title">模型列表</h3>
+        <p class="studio-dialog__desc">拖到中间案板，或点击添加到案板</p>
+      </div>
+      <div class="studio-dialog__body">
+        <div id="library-dialog-list" class="studio-model-list studio-model-list--dialog studio-scroll-area"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="studio-save-dialog" class="studio-dialog" aria-hidden="true">
+    <div class="studio-dialog__panel" role="dialog" aria-labelledby="save-dialog-title">
+      <div class="studio-dialog__head">
+        <h3 id="save-dialog-title" class="studio-dialog__title">保存模型草稿</h3>
+        <p class="studio-dialog__desc">保存至「我的」主页，可继续编辑或分享到展厅。</p>
+      </div>
+      <div class="studio-dialog__body">
+        <label class="studio-field">
+          <span class="studio-field__label">作品标题</span>
+          <input type="text" id="save-draft-title" maxlength="40" class="studio-input" placeholder="例：春日锦鲤面团">
+        </label>
+        <div class="studio-dialog__actions">
+          <button type="button" id="save-draft-cancel" class="studio-btn studio-btn--ghost">取消</button>
+          <button type="button" id="save-draft-confirm" class="studio-btn studio-btn--primary">
+            <i data-lucide="save"></i>
+            确认保存
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="studio-share-dialog" class="studio-dialog" aria-hidden="true">
+    <div class="studio-dialog__panel studio-dialog__panel--wide" role="dialog" aria-labelledby="share-dialog-title">
+      <button type="button" id="share-cancel-top" class="studio-dialog__close" aria-label="关闭">
+        <i data-lucide="x"></i>
+      </button>
+      <div class="studio-dialog__head studio-dialog__head--row">
+        <div class="studio-dialog__icon">
+          <i data-lucide="share-2"></i>
+        </div>
+        <div>
+          <h3 id="share-dialog-title" class="studio-dialog__title">分享到数字化展厅</h3>
+          <p class="studio-dialog__desc">作品将出现在「数字化展厅」瀑布流，并可在「我的」主页查看。</p>
+        </div>
+      </div>
+      <div class="studio-dialog__body">
+        <label class="studio-field">
+          <span class="studio-field__label">作品标题</span>
+          <input type="text" id="share-title" maxlength="40" class="studio-input" placeholder="例：春日锦鲤面团">
+        </label>
+        <label class="studio-field">
+          <span class="studio-field__label">作品简介</span>
+          <textarea id="share-desc" rows="4" maxlength="200" class="studio-input studio-textarea" placeholder="介绍一下你的创作灵感…"></textarea>
+        </label>
+        <div class="studio-dialog__actions">
+          <button type="button" id="share-cancel" class="studio-btn studio-btn--ghost">取消</button>
+          <button type="button" id="share-confirm" class="studio-btn studio-btn--primary">
+            <i data-lucide="send"></i>
+            确认发布
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="studio-ar-save-dialog" class="studio-dialog studio-dialog--ar-live" aria-hidden="true">
+    <div class="studio-dialog__panel" role="dialog" aria-labelledby="ar-save-dialog-title">
+      <div class="studio-dialog__head">
+        <h3 id="ar-save-dialog-title" class="studio-dialog__title">保存 AR 截图</h3>
+        <p class="studio-dialog__desc">可选择下载到本地、保存至 DIY 作品集，或同时执行。</p>
+      </div>
+      <div class="studio-dialog__body">
+        <div class="studio-ar-save-options">
+          <label class="studio-check-option">
+            <input type="checkbox" id="ar-save-download" checked>
+            <span>下载到本地</span>
+          </label>
+          <label class="studio-check-option">
+            <input type="checkbox" id="ar-save-portfolio" checked>
+            <span>保存至 DIY 作品集</span>
+          </label>
+        </div>
+        <label class="studio-field" id="ar-save-title-field">
+          <span class="studio-field__label">作品标题（保存至作品集时）</span>
+          <input type="text" id="ar-save-title" maxlength="40" class="studio-input" placeholder="例：AR 面塑实景 · 5月20日">
+        </label>
+        <div class="studio-dialog__actions">
+          <button type="button" id="ar-save-cancel" class="studio-btn studio-btn--ghost">取消</button>
+          <button type="button" id="ar-save-confirm" class="studio-btn studio-btn--primary">
+            <i data-lucide="check"></i>
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="export-menu" class="studio-export-menu">
+    <button type="button" data-format="glb">
+      <i data-lucide="file-box"></i>
+      导出 GLB 格式
+    </button>
+    <button type="button" data-format="stl">
+      <i data-lucide="component"></i>
+      导出 STL 格式
+    </button>
+  </div>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script src="js/site-base.js"></script>
+  <script src="js/camera-utils.js?v=20260521"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api-config.js?v=20260521"></script>
+  <script src="js/db-seed.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/api-remote.js?v=20260520"></script>
+  <script>
+    (function () {
+      function loadStudio() {
+        var s = document.createElement('script');
+        s.type = 'module';
+        s.src = 'js/studio.js?v=20261102';
+        document.body.appendChild(s);
+      }
+      loadStudio();
+    })();
+  </script>
+</body>
+</html>

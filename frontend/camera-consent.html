@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>摄像头授权 — 指间塑 DIY</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/studio.css">
+</head>
+<body class="consent-page">
+  <div class="consent-card">
+    <h1>开启摄像头权限</h1>
+    <p>DIY 工作台需要调用摄像头，用于<strong>手势操控</strong>面团模型与<strong>AR 实景融合</strong>功能。我们不会上传您的视频，仅在本地处理。</p>
+    <ul class="consent-list">
+      <li>手势捏塑：大拇指朝上/朝下缩放，双手升降移动高度，食指滑动平移</li>
+      <li>AR 体验：将编辑好的面食模型叠加到真实场景并导出 JPG</li>
+    </ul>
+    <div id="local-http-consent-help"></div>
+    <div class="consent-actions">
+      <button type="button" class="btn btn-primary" id="btn-agree">同意并进入工作台</button>
+      <button type="button" class="btn btn-outline" id="btn-deny">不同意，返回</button>
+    </div>
+    <p class="consent-tip" id="consent-status"></p>
+  </div>
+  <script src="js/site-base.js"></script>
+  <script src="js/camera-utils.js?v=20260520"></script>
+  <script src="js/local-http.js?v=20260520"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api-config.js?v=20260521"></script>
+  <script src="js/db-seed.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/api-remote.js?v=20260520"></script>
+  <script>
+    (function () {
+      if (!Api.isLoggedIn()) {
+        location.href = 'login.html?return=studio';
+        return;
+      }
+      document.getElementById('btn-deny').onclick = function () {
+        location.href = 'digital.html';
+      };
+
+      var editQ = new URLSearchParams(window.location.search).get('edit');
+      var studioHref = editQ
+        ? 'studio.html?edit=' + encodeURIComponent(editQ)
+        : 'studio.html';
+
+      function goStudio() {
+        sessionStorage.setItem('zhijiansu_camera_ok', '1');
+        location.href = studioHref;
+      }
+
+      var helpEl = document.getElementById('local-http-consent-help');
+      if (window.ZJS && ZJS.LocalHttp) {
+        if (location.protocol === 'file:') {
+          ZJS.LocalHttp.renderHelp(helpEl, studioHref);
+          ZJS.LocalHttp.trySwitchCurrentPage();
+        } else if (ZJS.LocalHttp.needsHttpsForCamera()) {
+          ZJS.LocalHttp.renderHttpsHelp(helpEl);
+        }
+      }
+
+      document.getElementById('btn-agree').onclick = function () {
+        var status = document.getElementById('consent-status');
+        if (ZJS.LocalHttp && ZJS.LocalHttp.isFilePage()) {
+          status.textContent =
+            '本地文件地址无法使用摄像头。请先按上方说明启动本地服务，用 http://127.0.0.1 打开后再点同意。';
+          ZJS.LocalHttp.trySwitchCurrentPage().then(function (ok) {
+            if (!ok) goStudio();
+          });
+          return;
+        }
+        if (ZJS.LocalHttp && ZJS.LocalHttp.needsHttpsForCamera()) {
+          status.textContent =
+            '请为网站配置 SSL，使用 https://' + location.hostname + ' 打开后再进入工作台。';
+          return;
+        }
+        status.textContent = '正在请求摄像头权限…';
+        if (!window.ZJS || !ZJS.Camera) {
+          status.textContent = '摄像头模块未加载，请刷新页面重试。';
+          return;
+        }
+        ZJS.Camera.requestVideoStream({ preferEnvironment: false })
+          .then(function (stream) {
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            goStudio();
+          })
+          .catch(function (err) {
+            status.textContent = '无法获取摄像头：' + ZJS.Camera.friendlyCameraError(err);
+          });
+      };
+    })();
+  </script>
+</body>
+</html>

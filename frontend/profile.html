@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户主页 — 指间塑</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <img src="images/logo.png" alt="指间塑 Logo" class="brand-logo" width="44" height="44">
+        <div class="brand-text">
+          <span class="brand-name">指间塑</span>
+          <span class="brand-tag">胶东花饽饽</span>
+        </div>
+      </a>
+      <div class="header-right">
+        <button class="nav-toggle" type="button" aria-label="打开菜单">
+          <span></span><span></span><span></span>
+        </button>
+        <nav class="main-nav">
+          <a href="index.html">首页</a>
+          <a href="huayang.html">馒有花样</a>
+          <a href="digital.html">数字化体验</a>
+          <a href="gallery.html">数字化展厅</a>
+          <a href="artisans.html">合作手艺人</a>
+          <a href="charity.html">公益案例</a>
+          <a href="news.html">新闻资讯</a>
+          <a href="about.html">关于我们</a>
+        </nav>
+        <div class="header-user">
+          <a href="profile.html?id=me" class="nav-mine">我的</a>
+          <div class="header-auth-group">
+            <a href="login.html" class="btn-auth btn-login">登录</a>
+            <a href="register.html" class="btn-auth btn-register">注册</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section" style="padding-top: 24px;">
+      <div class="container" id="profile-root">
+        <p class="section-desc">正在加载用户数据…</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="profile-share-dialog" class="profile-dialog" aria-hidden="true">
+    <div class="profile-dialog__panel" role="dialog" aria-labelledby="profile-share-title">
+      <h3 id="profile-share-title" class="profile-dialog__title">分享到数字化展厅</h3>
+      <p class="profile-dialog__desc">作品将出现在「数字化展厅」瀑布流，所有人可见。</p>
+      <label class="profile-dialog__field">
+        <span>作品标题</span>
+        <input type="text" id="profile-share-title-input" maxlength="40" class="profile-dialog__input" placeholder="例：春日锦鲤面团">
+      </label>
+      <label class="profile-dialog__field">
+        <span>作品介绍</span>
+        <textarea id="profile-share-desc-input" rows="3" class="profile-dialog__input" placeholder="简要介绍作品创意与寓意"></textarea>
+      </label>
+      <div class="profile-dialog__actions">
+        <button type="button" id="profile-share-cancel" class="btn btn-outline">取消</button>
+        <button type="button" id="profile-share-confirm" class="btn btn-primary">确认分享</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-bottom">
+      <p>© 2026 指间塑</p>
+    </div>
+  </footer>
+
+  <script src="js/site-base.js"></script>
+  <script src="js/i18n.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/api-config.js?v=20260521"></script>
+  <script src="js/db-seed.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/api-remote.js?v=20260521" defer></script>
+  <script src="js/profile-page.js" defer></script>
+  <script src="js/main.js" defer></script>
+</body>
+</html>

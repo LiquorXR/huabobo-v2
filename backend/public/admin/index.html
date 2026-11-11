@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>指间塑 · 管理后台</title>
+  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css">
+  <script>
+    /* 走当前页面同源（域名须 Nginx 反代 /api；IP:3000 则直连 Node） */
+    window.ADMIN_API_BASE = location.origin;
+  </script>
+</head>
+<body class="admin-guest">
+  <div id="login-screen" class="login-screen" aria-label="管理员登录">
+    <form id="login-form" class="login-card">
+      <h1 class="login-title">指间塑管理后台</h1>
+      <p class="login-desc">胶东花饽饽文化传播平台</p>
+      <label>
+        <span>用户名</span>
+        <input type="text" name="username" value="admin" required autocomplete="username">
+      </label>
+      <label>
+        <span>密码</span>
+        <input type="password" name="password" required autocomplete="current-password">
+      </label>
+      <button type="submit" class="btn btn-primary" id="btn-login-submit">登录</button>
+      <p id="login-status" class="login-status"></p>
+      <p id="login-error" class="form-error" hidden></p>
+      <details class="login-advanced">
+        <summary>无法登录？检查 API 地址</summary>
+        <label>
+          <span>后台 API 地址</span>
+          <input type="text" id="api-base-input" placeholder="https://www.songqingtian.top" autocomplete="off">
+        </label>
+        <p class="login-advanced-hint">推荐用 <strong>https://www.songqingtian.top/admin/</strong> 打开（须 Nginx 反代 /api）。也可用 <strong>http://8.160.184.132:3000/admin/</strong>。</p>
+      </details>
+    </form>
+  </div>
+
+  <div id="app" class="app" aria-label="管理后台" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-main">指间塑</span>
+        <span class="brand-sub">管理后台</span>
+      </div>
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item is-active" data-panel="dashboard">数据看板</button>
+        <button type="button" class="nav-item" data-panel="news">新闻资讯</button>
+        <button type="button" class="nav-item" data-panel="users">注册用户</button>
+        <button type="button" class="nav-item" data-panel="artisans">合作艺人</button>
+        <button type="button" class="nav-item" data-panel="about">关于我们</button>
+        <button type="button" class="nav-item" data-panel="models">模型管理</button>
+      </nav>
+      <button type="button" id="btn-logout" class="btn-logout">退出登录</button>
+    </aside>
+
+    <main class="main">
+      <header class="main-header">
+        <h2 id="panel-title">数据看板</h2>
+        <span id="admin-user" class="admin-user"></span>
+      </header>
+
+      <section id="panel-dashboard" class="panel is-active">
+        <div class="stat-grid">
+          <div class="stat-card">
+            <span class="stat-label">总用户数</span>
+            <strong id="stat-users" class="stat-value">—</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">展厅作品数</span>
+            <strong id="stat-works" class="stat-value">—</strong>
+          </div>
+        </div>
+        <div class="chart-card">
+          <h3>近 7 日新增注册</h3>
+          <canvas id="chart-new" width="640" height="220" aria-label="近7日新增用户"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>近 7 日累计用户</h3>
+          <canvas id="chart-total" width="640" height="220" aria-label="近7日累计用户"></canvas>
+        </div>
+      </section>
+
+      <section id="panel-news" class="panel">
+        <div class="panel-toolbar">
+          <button type="button" id="btn-news-new" class="btn btn-primary">发布新闻</button>
+        </div>
+        <div id="news-list" class="data-table-wrap"></div>
+        <form id="news-form" class="editor-card" hidden>
+          <h3 id="news-form-title">发布新闻</h3>
+          <input type="hidden" id="news-edit-id">
+          <label><span>标题</span><input type="text" id="news-title" required maxlength="120"><p class="editor-section-hint">最多 120 字</p></label>
+          <label><span>封面图</span><input type="file" id="news-image" accept="image/*"><p class="editor-section-hint">列表页与详情页顶部的封面，仅一张</p><div id="news-cover-preview" class="image-preview" hidden></div></label>
+          <label><span>概述</span><textarea id="news-summary" rows="2" maxlength="500"></textarea><p class="editor-section-hint">最多 500 字</p></label>
+          <label class="news-field-content">
+            <span>正文</span>
+            <p class="editor-section-hint">正文最多 <strong id="news-content-max">20,000</strong> 字（含标点与空格），超出将无法保存</p>
+            <div class="news-content-editor">
+              <div class="news-content-toolbar">
+                <div class="news-content-tabs" role="tablist">
+                  <button type="button" id="news-editor-tab-write" class="btn btn-ghost news-tab is-active" role="tab" aria-selected="true">编辑</button>
+                  <button type="button" id="news-editor-tab-preview" class="btn btn-ghost news-tab" role="tab" aria-selected="false">预览</button>
+                </div>
+                <button type="button" id="news-insert-paragraph" class="btn btn-ghost">另起一行</button>
+                <button type="button" id="news-insert-linebreak" class="btn btn-ghost">段内换行</button>
+                <span class="news-align-label">对齐</span>
+                <button type="button" class="btn btn-ghost news-align-btn" data-align="left">靠左</button>
+                <button type="button" class="btn btn-ghost news-align-btn" data-align="center">居中</button>
+                <button type="button" class="btn btn-ghost news-align-btn" data-align="right">靠右</button>
+                <button type="button" id="news-insert-images" class="btn btn-ghost">插入图片</button>
+                <input type="file" id="news-content-images" accept="image/*" multiple hidden>
+                <span class="news-image-size-label">图片宽度</span>
+                <button type="button" class="btn btn-ghost news-img-width" data-width="40%">40%</button>
+                <button type="button" class="btn btn-ghost news-img-width" data-width="60%">60%</button>
+                <button type="button" class="btn btn-ghost news-img-width" data-width="80%">80%</button>
+                <button type="button" class="btn btn-ghost news-img-width" data-width="100%">100%</button>
+                <span class="field-hint">Enter 另起一行；Shift+Enter 段内换行；对齐作用于当前段落或选中图片</span>
+              </div>
+              <div id="news-editor-panel">
+                <div id="news-editor-mount"></div>
+              </div>
+              <div id="news-preview-panel" class="news-preview-panel" hidden>
+                <div id="news-content-preview" class="news-content-preview"></div>
+              </div>
+              <div id="news-char-count" class="news-char-count">0 / 20,000 字</div>
+            </div>
+          </label>
+          <label><span>发布时间</span><input type="date" id="news-published"><p class="editor-section-hint">只需选择日期，精确到日</p></label>
+          <div class="form-actions">
+            <button type="button" id="news-cancel" class="btn btn-ghost">取消</button>
+            <button type="button" id="news-save-btn" class="btn btn-primary">保存</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="panel-users" class="panel">
+        <div class="panel-toolbar">
+          <input type="search" id="user-keyword" placeholder="搜索手机号 / 昵称" class="search-input">
+          <button type="button" id="btn-user-search" class="btn btn-ghost">搜索</button>
+        </div>
+        <div id="users-list" class="data-table-wrap"></div>
+      </section>
+
+      <section id="panel-artisans" class="panel">
+        <div class="panel-toolbar">
+          <button type="button" id="btn-artisan-new" class="btn btn-primary">添加合作艺人</button>
+        </div>
+        <div id="artisans-list" class="card-grid"></div>
+        <form id="artisan-form" class="editor-card editor-card-wide" hidden>
+          <h3 id="artisan-form-title">添加合作艺人</h3>
+          <input type="hidden" id="artisan-edit-id">
+          <input type="hidden" id="artisan-image-keep">
+          <input type="hidden" id="artisan-wechat-qr-keep">
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">基本信息</h4>
+            <label><span>姓名</span><input type="text" id="artisan-name" required></label>
+            <label><span>头衔</span><input type="text" id="artisan-title" placeholder="如：省级非遗传承人 · 烟台"></label>
+            <label><span>简介</span><textarea id="artisan-bio" rows="4"></textarea></label>
+            <label><span>标签</span><input type="text" id="artisan-tags" placeholder="逗号分隔"></label>
+            <label><span>排序</span><input type="number" id="artisan-sort" value="0"></label>
+            <label><span>头像</span><input type="file" id="artisan-image" accept="image/*"></label>
+            <div id="artisan-image-preview" class="image-preview" hidden></div>
+          </div>
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">代表作品</h4>
+            <p class="editor-section-hint">可添加多件作品，上传作品图片并填写名称与说明。</p>
+            <div id="artisan-portfolio-list" class="portfolio-editor-list"></div>
+            <button type="button" id="btn-portfolio-add" class="btn btn-ghost">+ 添加作品</button>
+          </div>
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">联系方式</h4>
+            <label><span>店铺 / 工作室名称</span><input type="text" id="artisan-contact-shop"></label>
+            <label><span>地址</span><input type="text" id="artisan-contact-address"></label>
+            <label><span>营业时间</span><input type="text" id="artisan-contact-hours"></label>
+            <label><span>主营项目</span><input type="text" id="artisan-contact-main"></label>
+            <label><span>联系电话</span><input type="text" id="artisan-contact-phone" placeholder="手机或座机"></label>
+            <label><span>备注说明</span><textarea id="artisan-contact-note" rows="2"></textarea></label>
+          </div>
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">微信联系</h4>
+            <label><span>微信号</span><input type="text" id="artisan-wechat-id"></label>
+            <label><span>添加提示语</span><input type="text" id="artisan-wechat-tip" placeholder="如：咨询定制请备注「指间塑」"></label>
+            <label><span>微信二维码截图</span><input type="file" id="artisan-wechat-qr" accept="image/*"></label>
+            <div id="artisan-wechat-preview" class="image-preview image-preview-qr" hidden></div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" id="artisan-cancel" class="btn btn-ghost">取消</button>
+            <button type="submit" id="artisan-submit-btn" class="btn btn-primary">保存</button>
+          </div>
+          <p id="artisan-form-error" class="form-error" hidden></p>
+        </form>
+      </section>
+
+      <section id="panel-about" class="panel">
+        <form id="about-form" class="editor-card editor-card-wide">
+          <h3>关于我们 · 页面内容</h3>
+          <input type="hidden" id="about-intro-image-keep">
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">页头</h4>
+            <label><span>标题</span><input type="text" id="about-hero-title"></label>
+            <label><span>副标题</span><textarea id="about-hero-subtitle" rows="2"></textarea></label>
+          </div>
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">平台简介</h4>
+            <label><span>区块标题</span><input type="text" id="about-intro-title"></label>
+            <label><span>介绍文字</span><textarea id="about-intro-text" rows="6" placeholder="段落之间空一行"></textarea></label>
+            <label><span>标签</span><input type="text" id="about-values" placeholder="逗号分隔，如：年轻态,数字化"></label>
+            <label><span>配图</span><input type="file" id="about-intro-image" accept="image/*"></label>
+            <div id="about-intro-preview" class="image-preview" hidden></div>
+          </div>
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">可打印作品展示（最多 5 个）</h4>
+            <p class="editor-section-hint">用户 DIY 完成后可找平台打印，在此展示参考作品。</p>
+            <label><span>区块标题</span><input type="text" id="about-print-title"></label>
+            <label><span>区块说明</span><textarea id="about-print-desc" rows="2"></textarea></label>
+            <div id="about-print-list" class="about-print-editor-list"></div>
+          </div>
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">联系我们</h4>
+            <label><span>说明文字</span><textarea id="about-contact-note" rows="2"></textarea></label>
+            <label><span>邮箱</span><input type="text" id="about-contact-email"></label>
+            <label><span>微信</span><input type="text" id="about-contact-wechat"></label>
+            <label><span>地址</span><input type="text" id="about-contact-address"></label>
+            <label><span>工作时间</span><input type="text" id="about-contact-hours"></label>
+          </div>
+
+          <div class="editor-section">
+            <h4 class="editor-section-title">加入我们</h4>
+            <label><span>区块标题</span><input type="text" id="about-join-title"></label>
+            <label><span>介绍文字</span><textarea id="about-join-text" rows="4"></textarea></label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">保存</button>
+          </div>
+          <p id="about-form-error" class="form-error" hidden></p>
+        </form>
+      </section>
+
+      <section id="panel-models" class="panel">
+        <div class="models-admin-block">
+          <div class="panel-toolbar">
+            <h3 class="models-admin-heading">分类管理</h3>
+            <button type="button" id="btn-category-new" class="btn btn-ghost">新增分类</button>
+          </div>
+          <div id="categories-list" class="data-table-wrap"></div>
+          <form id="category-form" class="editor-card" hidden>
+            <h3 id="category-form-title">新增分类</h3>
+            <input type="hidden" id="category-edit-id">
+            <label><span>分类名称</span><input type="text" id="category-name" required maxlength="40" placeholder="如：传统花饽饽"></label>
+            <label><span>排序</span><input type="number" id="category-sort" value="0"><p class="editor-section-hint">数字越小越靠前</p></label>
+            <div class="form-actions">
+              <button type="button" id="category-cancel" class="btn btn-ghost">取消</button>
+              <button type="submit" class="btn btn-primary">保存分类</button>
+            </div>
+            <p id="category-form-error" class="form-error" hidden></p>
+          </form>
+        </div>
+        <div class="models-admin-block">
+          <div class="panel-toolbar">
+            <h3 class="models-admin-heading">模型列表</h3>
+            <button type="button" id="btn-model-new" class="btn btn-primary">上传模型</button>
+          </div>
+          <div id="models-list" class="data-table-wrap"></div>
+          <form id="model-form" class="editor-card editor-card-wide" hidden>
+            <h3 id="model-form-title">上传 GLB 模型</h3>
+            <input type="hidden" id="model-edit-id">
+            <input type="hidden" id="model-glb-keep">
+            <input type="hidden" id="model-thumb-keep">
+            <label><span>归属分类</span>
+              <select id="model-category" required>
+                <option value="">请选择分类</option>
+              </select>
+              <p class="editor-section-hint">必须挂到一个分类后，才会出现在工作台对应分类弹窗中</p>
+            </label>
+            <label><span>模型名称</span><input type="text" id="model-name" required placeholder="如：寿桃、鲤鱼"></label>
+            <label><span>模型介绍</span><textarea id="model-desc" rows="3" placeholder="简要说明造型与用途"></textarea></label>
+            <label><span>排序</span><input type="number" id="model-sort" value="0"><p class="editor-section-hint">数字越小越靠前</p></label>
+            <label><span>GLB 模型文件</span><input type="file" id="model-glb" accept=".glb,model/gltf-binary"><p class="editor-section-hint">选择 .glb 后将自动生成缩略图（最大 50MB）</p></label>
+            <p id="model-thumb-status" class="editor-section-hint"></p>
+            <div id="model-glb-info" class="editor-section-hint"></div>
+            <div id="model-thumb-preview" class="image-preview model-thumb-preview" hidden></div>
+            <div class="form-actions">
+              <button type="button" id="model-cancel" class="btn btn-ghost">取消</button>
+              <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+            <p id="model-form-error" class="form-error" hidden></p>
+          </form>
+        </div>
+      </section>
+
+      <section id="panel-comments" class="panel" hidden aria-hidden="true">
+        <div id="comments-list" class="data-table-wrap"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./vendor/admin-thumb.bundle.js" data-admin-thumb-bundle="1"></script>
+  <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

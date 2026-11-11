@@ -1,0 +1,10 @@
+node_modules/
+.env
+backend/uploads/*
+!backend/uploads/.gitkeep
+*.log
+.DS_Store
+__MACOSX/
+
+# large seed models: uploaded manually after deploy, never committed
+assets/model-library/
