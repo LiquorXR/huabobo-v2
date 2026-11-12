@@ -26,6 +26,8 @@ jobs:
           printf 'DOMAIN=ci.local\nPOSTGRES_USER=mydb\nPOSTGRES_DB=mydb\nPOSTGRES_PASSWORD=ci_pass\nJWT_SECRET=ci_secret\n' > .env
           docker compose config -q && echo "compose ok"
           rm -f .env
+      - name: validate Caddyfile
+        run: docker run --rm -e DOMAIN=ci.local -v $PWD/web/Caddyfile:/etc/caddy/Caddyfile:ro caddy:alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
   backend:
     runs-on: ubuntu-latest
@@ -127,3 +129,40 @@ jobs:
         with:
           node-version: 22
       - run: node frontend/scripts/check-assets.js
+
+  docker-image:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zhijiansu
+          POSTGRES_PASSWORD: ci_pass
+          POSTGRES_DB: mydb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: build production image
+        run: docker build -t backend:ci ./backend
+      - name: run image + full smoke against container
+        run: |
+          docker run -d --name backend-ci --network host \
+            -e DATABASE_URL=postgres://zhijiansu:ci_pass@127.0.0.1:5432/mydb \
+            -e JWT_SECRET=ci_secret \
+            -e PUBLIC_BASE_URL=http://127.0.0.1:3000 \
+            -e FRONTEND_BASE_URL=http://127.0.0.1:3000 \
+            backend:ci
+          sleep 14
+          SMOKE_BASE=http://127.0.0.1:3000 node backend/scripts/smoke.js; code=$?
+          docker logs backend-ci
+          docker rm -f backend-ci
+          exit $code
