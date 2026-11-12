@@ -22,7 +22,10 @@ jobs:
           if [ -n "$big" ]; then echo "files over 50MB:"; echo "$big"; exit 1; fi
           echo "size check pass"
       - name: validate compose
-        run: docker compose config -q && echo "compose ok"
+        run: |
+          printf 'DOMAIN=ci.local\nPOSTGRES_USER=mydb\nPOSTGRES_DB=mydb\nPOSTGRES_PASSWORD=ci_pass\nJWT_SECRET=ci_secret\n' > .env
+          docker compose config -q && echo "compose ok"
+          rm -f .env
 
   backend:
     runs-on: ubuntu-latest
