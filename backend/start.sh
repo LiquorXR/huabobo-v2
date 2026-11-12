@@ -2,8 +2,8 @@
 # Backend starter (replaces old 启动服务.command)
 set -e
 cd "$(dirname "$0")"
-# Requires Node.js >= v16.9.0 (see .nvmrc)
-node -v 2>/dev/null || { echo "Please install Node.js v16.9.0+"; exit 1; }
+# Requires Node.js >= v22 (see .nvmrc; better-sqlite3 v13 requires Node 22+)
+node -v 2>/dev/null || { echo "Please install Node.js v22+"; exit 1; }
 if [ ! -d "node_modules" ]; then
   echo "Installing dependencies..."
   npm install

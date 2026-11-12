@@ -14,7 +14,7 @@
     "postinstall": "node -e \"console.log('[ok] 依赖安装完成，可执行 npm start')\""
   },
   "engines": {
-    "node": ">=16.9.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

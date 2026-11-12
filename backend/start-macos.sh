@@ -1,7 +1,7 @@
 #!/bin/bash
 cd "$(dirname "$0")"
-# 需要 Node.js >= v16.9.0
-node -v 2>/dev/null || { echo "请先安装 Node.js v16.9.0 或更高版本"; exit 1; }
+# 需要 Node.js >= v22（better-sqlite3 v13 要求）
+node -v 2>/dev/null || { echo "请先安装 Node.js v22 或更高版本"; exit 1; }
 if [ ! -d "node_modules" ]; then
   echo "正在安装依赖…"
   npm install

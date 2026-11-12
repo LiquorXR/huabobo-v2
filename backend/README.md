@@ -29,13 +29,13 @@
 
 ## 环境要求
 
-- **Node.js v16.9.0 及以上**（推荐与服务器一致使用 16.9.x；可用 `nvm use` 切换，见 `.nvmrc`）
+- **Node.js v22 及以上**（better-sqlite3 v13 要求 Node 22+；`nvm install 22 && nvm use 22`，见 `.nvmrc`）
 - 生产：PostgreSQL 16（`DATABASE_URL=postgres://USER:PASS@127.0.0.1:5432/mydb`）；本地：SQLite 零依赖（`DATABASE_URL=file:./dev.db`，默认）
 
 检查版本：
 
 ```bash
-node -v   # 应 >= v16.9.0
+node -v   # 应 >= v22
 ```
 
 ## 快速开始
@@ -64,7 +64,7 @@ npm start       # 或 npm run dev
 
 ```bash
 cd /www/wwwroot/nodejs
-node -v          # 确认 >= v16.9.0
+node -v          # 确认 >= v22（旧 16.x 跑新版会直接段错误，先 nvm 升级）
 npm install      # 必须执行，会生成 node_modules
 npm start
 ```
