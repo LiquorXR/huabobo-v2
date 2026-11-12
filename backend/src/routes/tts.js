@@ -93,7 +93,13 @@ router.post(
     clearTimeout(timer);
 
     if (!upstream.ok) {
-      return res.status(502).json({ ok: false, message: '语音服务异常' });
+      let detail = '';
+      try {
+        const text = await upstream.text();
+        detail = String(text || '').slice(0, 300);
+        console.error('[tts] upstream HTTP', upstream.status, detail);
+      } catch (e) {}
+      return res.status(502).json({ ok: false, message: '语音服务异常' + (detail ? '：' + detail : '') });
     }
 
     // chunked JSON 行流：{"code":0,"data":"<base64>"} … {"code":20000000} 结束
