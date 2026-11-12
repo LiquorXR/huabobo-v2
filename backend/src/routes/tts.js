@@ -81,6 +81,116 @@ function ensureWav(audio, contentType) {
   return { audio: audio, contentType: String(contentType || 'audio/wav') };
 }
 
+// 智谱 TTS 会在正音前塞几段 550Hz 左右的纯音"嘟"声（实测：多段、每段约 0.1-0.5s，
+// 峰值恒定、rms/峰值≈0.707，段间为全数字静音；watermark_enabled=false 也去不掉）。
+// 人声正式开始前把这段"头部伪影"裁掉，否则每次播放开头都先"嘟嘟"两声。
+// 只动文件头：找不到"稳定纯音串+其后实实在在的人声"就原样返回，绝不伤及正文。
+function trimLeadingBeep(wavBuffer) {
+  try {
+    if (!wavBuffer || wavBuffer.length < 60) return wavBuffer;
+    if (wavBuffer.toString('ascii', 0, 4) !== 'RIFF' || wavBuffer.toString('ascii', 8, 12) !== 'WAVE') {
+      return wavBuffer;
+    }
+    // 定位 data 块（跳过 fmt 之后可能存在的扩展块）
+    let dataAt = -1;
+    for (let o = 12; o + 8 <= wavBuffer.length; o += 1) {
+      if (wavBuffer.toString('ascii', o, o + 4) === 'data') {
+        dataAt = o + 8;
+        break;
+      }
+    }
+    if (dataAt < 0) return wavBuffer;
+    const channels = wavBuffer.readUInt16LE(22);
+    const sampleRate = wavBuffer.readUInt32LE(24);
+    const bits = wavBuffer.readUInt16LE(34);
+    if (channels !== 1 || bits !== 16 || !sampleRate || sampleRate < 8000 || sampleRate > 96000) {
+      return wavBuffer;
+    }
+    const total = Math.floor((wavBuffer.length - dataAt) / 2);
+    if (total < sampleRate / 5) return wavBuffer; // 太短，不折腾
+    const frameLen = Math.floor(sampleRate / 50); // 20ms 一帧
+    const maxFrames = Math.min(Math.ceil(total / frameLen), Math.floor((sampleRate * 3) / frameLen)); // 最多看 3s
+    // 第一遍：给每一帧打标签 silence(0) / tone(1) / other(2)
+    const tags = new Array(maxFrames);
+    const peaks = new Array(maxFrames);
+    for (let f = 0; f < maxFrames; f += 1) {
+      const start = f * frameLen;
+      const end = Math.min(start + frameLen, total);
+      let peak = 0;
+      let sum = 0;
+      let zcr = 0;
+      let prev = wavBuffer.readInt16LE(dataAt + start * 2);
+      for (let i = start; i < end; i += 1) {
+        const v = wavBuffer.readInt16LE(dataAt + i * 2);
+        const a = v < 0 ? -v : v;
+        if (a > peak) peak = a;
+        sum += v * v;
+        if ((v >= 0) !== (prev >= 0)) zcr += 1;
+        prev = v;
+      }
+      const n = end - start;
+      const rms = Math.sqrt(sum / n);
+      peaks[f] = peak;
+      if (peak < 80) {
+        tags[f] = 0;
+      } else if (peak >= 800 && Math.abs(rms / peak - 0.7071) <= 0.12 && zcr >= 4 && zcr <= 320) {
+        tags[f] = 1;
+      } else {
+        tags[f] = 2;
+      }
+    }
+    // 找"稳定纯音串"：连续≥4 帧 tone 且峰值起伏≤10%（人声元音做不到这么稳，可与歌唱声区分）
+    const beepRuns = [];
+    let f = 0;
+    while (f < maxFrames) {
+      if (tags[f] !== 1) {
+        f += 1;
+        continue;
+      }
+      let g = f;
+      let pmin = peaks[f];
+      let pmax = peaks[f];
+      while (g < maxFrames && tags[g] === 1) {
+        if (peaks[g] < pmin) pmin = peaks[g];
+        if (peaks[g] > pmax) pmax = peaks[g];
+        g += 1;
+      }
+      if (g - f >= 4 && pmax - pmin <= pmax * 0.1) {
+        beepRuns.push({ start: f, end: g });
+      }
+      f = g;
+    }
+    if (!beepRuns.length) return wavBuffer; // 开头没有纯音串，原样返回
+    // 找"实实在在的人声起点"：连续 8 帧 other（160ms 真内容，纯音过渡帧凑不够这么长）
+    let speechFrame = -1;
+    for (let s = 0; s + 8 <= maxFrames; s += 1) {
+      let ok = true;
+      for (let k = 0; k < 8; k += 1) {
+        if (tags[s + k] !== 2) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        speechFrame = s;
+        break;
+      }
+    }
+    if (speechFrame < 0) return wavBuffer; // 3s 内没找到人声，原样返回
+    // 纯音串必须全部落在人声起点之前，否则可能是歌唱声，不裁
+    for (let r = 0; r < beepRuns.length; r += 1) {
+      if (beepRuns[r].end > speechFrame) return wavBuffer;
+    }
+    let cutSamples = speechFrame * frameLen - Math.floor(sampleRate * 0.03); // 留 30ms 预卷，保住轻声音头
+    if (cutSamples <= 0) return wavBuffer;
+    const cutBytes = cutSamples * 2;
+    if (dataAt + cutBytes >= wavBuffer.length) return wavBuffer;
+    return pcm16ToWavBuffer(wavBuffer.slice(dataAt + cutBytes), sampleRate);
+  } catch (e) {
+    return wavBuffer;
+  }
+}
+
 function ttsConfig() {
   if (process.env.ZHIPU_API_KEY) {
     return {
@@ -196,11 +306,12 @@ router.post(
         }
         clearTimeout(timer);
         const wav = ensureWav(out.audio, out.contentType);
+        const clean = trimLeadingBeep(wav.audio);
         res.set('Content-Type', wav.contentType);
-        res.set('Content-Length', String(wav.audio.length));
+        res.set('Content-Length', String(clean.length));
         res.set('Cache-Control', 'no-store');
         res.set('X-TTS-Provider', 'zhipu');
-        return res.send(wav.audio);
+        return res.send(clean);
       }
 
       let upstream;
@@ -314,4 +425,4 @@ router.post(
 
 module.exports = router;
 // 单测用：不影响 router 本体
-module.exports.ttsTestUtils = { pcm16ToWavBuffer: pcm16ToWavBuffer, hasRiffWavHeader: hasRiffWavHeader, ensureWav: ensureWav };
+module.exports.ttsTestUtils = { pcm16ToWavBuffer: pcm16ToWavBuffer, hasRiffWavHeader: hasRiffWavHeader, ensureWav: ensureWav, trimLeadingBeep: trimLeadingBeep };
