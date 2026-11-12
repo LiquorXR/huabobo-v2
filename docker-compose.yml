@@ -35,6 +35,10 @@ services:
       DOUBAO_TTS_API_KEY: ${DOUBAO_TTS_API_KEY:-}
       DOUBAO_TTS_SPEAKER: ${DOUBAO_TTS_SPEAKER:-}
       DOUBAO_TTS_RESOURCE_ID: ${DOUBAO_TTS_RESOURCE_ID:-seed-tts-2.0}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      ARK_VISION_MODEL: ${ARK_VISION_MODEL:-}
+      ARK_TEXT_MODEL: ${ARK_TEXT_MODEL:-}
     volumes:
       - uploads-data:/data/uploads
     healthcheck:

@@ -121,6 +121,14 @@ Authorization: Bearer <token>
 
 响应含 `ok`、`db`（connected/disconnected）、`uploadDir`、`uploadFileCount`。
 
+### 数字人 AI（公开，需配 key；未配则前端自动降级）
+
+| 方法 | 说明 |
+|------|------|
+| POST `/api/tts/speak` | 豆包 TTS：Body `{ text }`，返回 `audio/mpeg`。需 `DOUBAO_TTS_API_KEY` + `DOUBAO_TTS_SPEAKER` |
+| POST `/api/vision/identify` | 实物识图：Body `{ image: dataURL }`，返回 `{ motif, craft, light }`。需 `ARK_API_KEY` + `ARK_VISION_MODEL` |
+| POST `/api/review/text` | 点评文案：Body `{ context }`，返回 `{ text }`。需 `ARK_API_KEY` + `ARK_TEXT_MODEL` |
+
 ---
 
 ### 1. 管理员

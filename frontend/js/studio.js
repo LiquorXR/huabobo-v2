@@ -1987,6 +1987,60 @@ function speakChunkSmart(chunk, index, total, token, onEnd, onFail) {
   });
 }
 
+async function postAiJson(path, body, timeoutMs) {
+  const base = apiBase();
+  if (!base) throw new Error('no backend');
+  let ctrl = null;
+  let timer = 0;
+  try {
+    if (typeof AbortController !== 'undefined') {
+      ctrl = new AbortController();
+      timer = window.setTimeout(function () {
+        try { ctrl.abort(); } catch (e) {}
+      }, timeoutMs || 26000);
+    }
+    const res = await fetch(base + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if (timer) window.clearTimeout(timer);
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || data.ok !== true || !data.data) {
+      throw new Error((data && data.message) || ('ai ' + res.status));
+    }
+    return data.data;
+  } finally {
+    if (timer) window.clearTimeout(timer);
+  }
+}
+
+function findMotifById(id) {
+  if (!id || typeof HUABOBO_MOTIFS === 'undefined' || !HUABOBO_MOTIFS) return null;
+  for (let i = 0; i < HUABOBO_MOTIFS.length; i++) {
+    if (HUABOBO_MOTIFS[i] && HUABOBO_MOTIFS[i].id === id) return HUABOBO_MOTIFS[i];
+  }
+  return null;
+}
+
+async function identifyMotifViaAI(dataUrl) {
+  const data = await postAiJson('/api/vision/identify', { image: dataUrl });
+  const entry = findMotifById(data.motif);
+  if (!entry) throw new Error('unknown motif');
+  let seed = 0;
+  for (let i = 0; i < data.motif.length; i++) seed = (seed * 31 + data.motif.charCodeAt(i)) % 97;
+  return { motifs: [entry], craft: data.craft, light: data.light, seed: seed, ratios: null };
+}
+
+async function fetchReviewText(context) {
+  const data = await postAiJson('/api/review/text', { context: context || {} });
+  const text = data && typeof data.text === 'string' ? data.text.trim() : '';
+  if (!text) throw new Error('empty review');
+  return text;
+}
+
 function speakHuman(text, onDone) {
   const token = ++humanSpeakToken;
   const chunks = toSpeakChunks(text);
@@ -2544,14 +2598,31 @@ function startHumanSession() {
   });
 }
 
-function reviewDigitalWork() {
+async function reviewDigitalWork() {
   clearRealFreeze();
   stopRealReviewCamera();
   setHumanActions('reviewing');
-  const text = buildHumanReview();
-  setStatus(loadedModels.length ? '正在点评数字版花饽饽（3D 模型）' : '案板为空，已给出提示');
+  const localText = buildHumanReview();
+  setStatus(loadedModels.length ? '正在点评数字版花饽饽（3D 模型）…' : '案板为空，已给出提示');
   if (hintStatusEl) hintStatusEl.textContent = '数字版：点评案板上的 3D 模型';
-  setHumanSpeech(text, true, afterDigitalReviewSpoken);
+  let text = null;
+  try {
+    const seen = [];
+    loadedModels.forEach(function (rec) {
+      if (rec && rec.name && seen.indexOf(rec.name) < 0 && seen.length < 6) seen.push(rec.name);
+    });
+    text = await fetchReviewText({
+      kind: 'digital',
+      motifs: [],
+      craft: 'ok',
+      light: 'good',
+      title: seen.slice(0, 3).join('、'),
+      extra: '案板上有' + loadedModels.length + '件模型' + (seen.length ? '：' + seen.join('、') : '')
+    });
+  } catch (e) {
+    console.warn('[studio] AI 点评不可用，用本地话术', e && e.message);
+  }
+  setHumanSpeech(text || localText, true, afterDigitalReviewSpoken);
 }
 
 async function startRealReviewCamera() {
@@ -2631,11 +2702,28 @@ async function confirmRealReviewShot() {
     }
     const frame = captureElementFrame(realCamVideo);
     const dataUrl = frame.toDataURL('image/jpeg', 0.9);
-    lastRealRecognition = analyzeHuaboboStill(realCamVideo);
+    let recog = null;
+    try {
+      recog = await identifyMotifViaAI(dataUrl);
+    } catch (e) {
+      console.warn('[studio] AI 识图不可用，回退本地识别', e && e.message);
+    }
+    lastRealRecognition = recog || analyzeHuaboboStill(realCamVideo);
     stopRealReviewCamera();
     await settleRealFreezePhoto(dataUrl);
     setStatus('正在识别造型与纹样…');
-    const text = buildRealReview(lastRealRecognition);
+    let text = null;
+    try {
+      text = await fetchReviewText({
+        kind: 'real',
+        motifs: (lastRealRecognition.motifs || []).map(function (m) { return m.id; }),
+        craft: lastRealRecognition.craft,
+        light: lastRealRecognition.light
+      });
+    } catch (e) {
+      console.warn('[studio] AI 点评不可用，用本地话术', e && e.message);
+    }
+    text = text || buildRealReview(lastRealRecognition);
     setHumanSpeech(text, true, function () {
       realReviewBusy = false;
       afterRealReviewSpoken();

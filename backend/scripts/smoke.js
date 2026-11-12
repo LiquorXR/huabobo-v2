@@ -118,6 +118,17 @@ async function req(method, path, body, token) {
     check('tts unconfigured 503', r.status === 503, r);
   }
 
+  r = await req('POST', '/api/vision/identify', { image: 'nope' });
+  check('vision bad image 400', r.status === 400, r);
+  r = await req('POST', '/api/review/text', { context: 'not-an-object' });
+  check('review bad context 400', r.status === 400, r);
+  if (!process.env.ARK_API_KEY) {
+    r = await req('POST', '/api/vision/identify', { image: 'data:image/jpeg;base64,/9j/' });
+    check('vision unconfigured 503', r.status === 503, r);
+    r = await req('POST', '/api/review/text', { context: { kind: 'real', motifs: ['tao'] } });
+    check('review unconfigured 503', r.status === 503, r);
+  }
+
   const ADMIN_USER = process.env.SMOKE_ADMIN_USER || 'admin';
   const ADMIN_PASS = process.env.SMOKE_ADMIN_PASS || 'zhijiansu@admin';
   r = await req('POST', '/api/admin/login', { username: ADMIN_USER, password: ADMIN_PASS });
