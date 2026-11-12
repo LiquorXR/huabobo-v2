@@ -27,7 +27,6 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-mydb}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mydb}
       JWT_SECRET: ${JWT_SECRET:?请在 .env 设置 JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      JWT_EXPIRES_IN: 7d
       PUBLIC_BASE_URL: https://${DOMAIN:?请在 .env 设置 DOMAIN}
       FRONTEND_BASE_URL: https://${DOMAIN}
       UPLOAD_DIR: /data/uploads
