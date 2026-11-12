@@ -1,5 +1,7 @@
 const express = require('express');
-const AboutPage = require('../models/AboutPage');
+const { eq } = require('drizzle-orm');
+const dbm = require('../db/client');
+const { newId, nowMs, parseJsonArray, parseJsonObject, stringifyJson } = require('../db/helpers');
 const { requireAdmin } = require('../middleware/auth');
 const requireDb = require('../middleware/requireDb');
 const { uploadAboutFiles } = require('../middleware/upload');
@@ -13,43 +15,65 @@ const MAX_PRINT_WORKS = 5;
 
 function mapAbout(doc) {
   if (!doc) return null;
-  const o = doc.toJSON ? doc.toJSON() : doc;
+  const contact = parseJsonObject(doc.contact);
   return {
-    id: o.id,
-    heroTitle: o.heroTitle,
-    heroSubtitle: o.heroSubtitle,
-    introTitle: o.introTitle,
-    introText: o.introText,
-    introImage: publicUrl(o.introImage),
-    values: o.values || [],
-    printSectionTitle: o.printSectionTitle,
-    printSectionDesc: o.printSectionDesc,
-    printWorks: (o.printWorks || []).slice(0, MAX_PRINT_WORKS).map(function (w) {
-      return {
-        title: w.title || '',
-        desc: w.desc || '',
-        image: publicUrl(w.image)
-      };
-    }),
-    joinTitle: o.joinTitle,
-    joinText: o.joinText,
+    id: doc.id,
+    heroTitle: doc.heroTitle,
+    heroSubtitle: doc.heroSubtitle,
+    introTitle: doc.introTitle,
+    introText: doc.introText,
+    introImage: publicUrl(doc.introImage),
+    values: parseJsonArray(doc.values),
+    printSectionTitle: doc.printSectionTitle,
+    printSectionDesc: doc.printSectionDesc,
+    printWorks: parseJsonArray(doc.printWorks)
+      .slice(0, MAX_PRINT_WORKS)
+      .map(function (w) {
+        return {
+          title: w.title || '',
+          desc: w.desc || '',
+          image: publicUrl(w.image)
+        };
+      }),
+    joinTitle: doc.joinTitle,
+    joinText: doc.joinText,
     contact: {
-      email: (o.contact && o.contact.email) || '',
-      wechat: (o.contact && o.contact.wechat) || '',
-      address: (o.contact && o.contact.address) || '',
-      hours: (o.contact && o.contact.hours) || '',
-      note: (o.contact && o.contact.note) || ''
+      email: (contact && contact.email) || '',
+      wechat: (contact && contact.wechat) || '',
+      address: (contact && contact.address) || '',
+      hours: (contact && contact.hours) || '',
+      note: (contact && contact.note) || ''
     },
-    updatedAt: o.updatedAt
+    updatedAt: doc.updatedAt
   };
 }
 
 async function getOrCreateAbout() {
-  let doc = await AboutPage.findOne({ key: ABOUT_KEY });
-  if (!doc) {
-    doc = await AboutPage.create(Object.assign({ key: ABOUT_KEY }, getDefaultAboutData()));
-  }
-  return doc;
+  const { aboutPages } = dbm.schema;
+  const rows = await dbm.db.select().from(aboutPages).where(eq(aboutPages.key, ABOUT_KEY)).limit(1);
+  if (rows[0]) return rows[0];
+  const now = nowMs();
+  const defaults = getDefaultAboutData();
+  const row = {
+    id: newId(),
+    key: ABOUT_KEY,
+    heroTitle: defaults.heroTitle || '',
+    heroSubtitle: defaults.heroSubtitle || '',
+    introTitle: defaults.introTitle || '',
+    introText: defaults.introText || '',
+    introImage: defaults.introImage || '',
+    values: stringifyJson(defaults.values || []),
+    printSectionTitle: defaults.printSectionTitle || '',
+    printSectionDesc: defaults.printSectionDesc || '',
+    printWorks: stringifyJson((defaults.printWorks || []).slice(0, MAX_PRINT_WORKS)),
+    joinTitle: defaults.joinTitle || '',
+    joinText: defaults.joinText || '',
+    contact: stringifyJson(defaults.contact || {}),
+    createdAt: now,
+    updatedAt: now
+  };
+  await dbm.db.insert(aboutPages).values(row);
+  return row;
 }
 
 function normalizeAssetPath(raw) {
@@ -96,6 +120,7 @@ function parsePrintWorks(body) {
 /** GET /api/about — 关于我们（公开） */
 router.get(
   '/',
+  requireDb,
   asyncHandler(async function (_req, res) {
     const doc = await getOrCreateAbout();
     res.json({ ok: true, data: mapAbout(doc) });
@@ -127,55 +152,60 @@ admin.put(
     });
   },
   asyncHandler(async function (req, res) {
+    const { aboutPages } = dbm.schema;
     const doc = await getOrCreateAbout();
     const body = req.body || {};
+    const patch = { updatedAt: nowMs() };
 
-    if (body.heroTitle !== undefined) doc.heroTitle = String(body.heroTitle).trim();
-    if (body.heroSubtitle !== undefined) doc.heroSubtitle = String(body.heroSubtitle);
-    if (body.introTitle !== undefined) doc.introTitle = String(body.introTitle).trim();
-    if (body.introText !== undefined) doc.introText = String(body.introText);
-    if (body.printSectionTitle !== undefined) doc.printSectionTitle = String(body.printSectionTitle).trim();
-    if (body.printSectionDesc !== undefined) doc.printSectionDesc = String(body.printSectionDesc);
-    if (body.joinTitle !== undefined) doc.joinTitle = String(body.joinTitle).trim();
-    if (body.joinText !== undefined) doc.joinText = String(body.joinText);
-    if (body.values !== undefined) doc.values = parseValues(body.values);
+    if (body.heroTitle !== undefined) patch.heroTitle = String(body.heroTitle).trim();
+    if (body.heroSubtitle !== undefined) patch.heroSubtitle = String(body.heroSubtitle);
+    if (body.introTitle !== undefined) patch.introTitle = String(body.introTitle).trim();
+    if (body.introText !== undefined) patch.introText = String(body.introText);
+    if (body.printSectionTitle !== undefined) patch.printSectionTitle = String(body.printSectionTitle).trim();
+    if (body.printSectionDesc !== undefined) patch.printSectionDesc = String(body.printSectionDesc);
+    if (body.joinTitle !== undefined) patch.joinTitle = String(body.joinTitle).trim();
+    if (body.joinText !== undefined) patch.joinText = String(body.joinText);
+    if (body.values !== undefined) patch.values = stringifyJson(parseValues(body.values));
 
     if (body.contact !== undefined) {
       try {
         const c = typeof body.contact === 'string' ? JSON.parse(body.contact) : body.contact;
-        doc.contact = doc.contact || {};
-        if (c.email !== undefined) doc.contact.email = String(c.email).trim();
-        if (c.wechat !== undefined) doc.contact.wechat = String(c.wechat).trim();
-        if (c.address !== undefined) doc.contact.address = String(c.address).trim();
-        if (c.hours !== undefined) doc.contact.hours = String(c.hours).trim();
-        if (c.note !== undefined) doc.contact.note = String(c.note);
+        const contact = parseJsonObject(doc.contact);
+        if (c.email !== undefined) contact.email = String(c.email).trim();
+        if (c.wechat !== undefined) contact.wechat = String(c.wechat).trim();
+        if (c.address !== undefined) contact.address = String(c.address).trim();
+        if (c.hours !== undefined) contact.hours = String(c.hours).trim();
+        if (c.note !== undefined) contact.note = String(c.note);
+        patch.contact = stringifyJson(contact);
       } catch (e2) {
         return res.status(400).json({ ok: false, message: '联系方式格式错误' });
       }
     }
 
     if (req.files && req.files.introImage && req.files.introImage[0]) {
-      doc.introImage = '/uploads/about/' + req.files.introImage[0].filename;
+      patch.introImage = '/uploads/about/' + req.files.introImage[0].filename;
     } else if (body.introImageKeep !== undefined) {
-      doc.introImage = normalizeAssetPath(body.introImageKeep);
+      patch.introImage = normalizeAssetPath(body.introImageKeep);
     }
 
     if (body.printWorks !== undefined) {
       var parsed = parsePrintWorks(body);
       var uploads = (req.files && req.files.printWorkImages) || [];
       var uploadIdx = 0;
-      doc.printWorks = parsed.map(function (w) {
-        var image = normalizeAssetPath(w.image || '');
-        if (w.hasNewFile && uploads[uploadIdx]) {
-          image = '/uploads/about/works/' + uploads[uploadIdx].filename;
-          uploadIdx += 1;
-        }
-        return { title: w.title, desc: w.desc, image: image };
-      });
+      patch.printWorks = stringifyJson(
+        parsed.map(function (w) {
+          var image = normalizeAssetPath(w.image || '');
+          if (w.hasNewFile && uploads[uploadIdx]) {
+            image = '/uploads/about/works/' + uploads[uploadIdx].filename;
+            uploadIdx += 1;
+          }
+          return { title: w.title, desc: w.desc, image: image };
+        })
+      );
     }
 
-    await doc.save();
-    res.json({ ok: true, data: mapAbout(doc) });
+    await dbm.db.update(aboutPages).set(patch).where(eq(aboutPages.id, doc.id));
+    res.json({ ok: true, data: mapAbout(Object.assign({}, doc, patch)) });
   })
 );
 

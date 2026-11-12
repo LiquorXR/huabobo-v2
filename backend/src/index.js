@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const config = require('./config');
-const { connectDb, isDbReady } = require('./db');
+const { connectDb, isDbReady } = require('./db/client');
 const { ensureSeedContent } = require('./seedContent');
 const { ensureUploadDirs, getUploadStats } = require('./utils/uploads');
 const errorHandler = require('./middleware/error');
@@ -111,7 +111,7 @@ async function start() {
       '位（与前端示例一致）'
     );
   } catch (err) {
-    console.error('[db] MongoDB 连接失败（登录接口仍可用，看板/数据功能需数据库）:', err.message);
+    console.error('[db] 数据库连接失败（读写接口将返回 503，请检查 DATABASE_URL）:', err.message);
   }
 }
 

@@ -4,50 +4,71 @@
  */
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { connectDb } = require('./db');
-const User = require('./models/User');
-const Work = require('./models/Work');
+const { eq, sql } = require('drizzle-orm');
+const { connectDb } = require('./db/client');
+const dbm = require('./db/client');
+const { newId, nowMs } = require('./db/helpers');
 const { ensureSeedContent } = require('./seedContent');
 
 async function seed() {
   await connectDb();
+  const { users, works } = dbm.schema;
 
   const result = await ensureSeedContent();
   console.log('[seed] 新闻条数:', result.newsCount, '合作艺人:', result.artisanCount);
 
   const demoPhone = '13800000001';
-  let user = await User.findOne({ phone: demoPhone });
+  let userRows = await dbm.db.select().from(users).where(eq(users.phone, demoPhone)).limit(1);
+  let user = userRows[0];
   if (!user) {
-    user = await User.create({
+    const now = nowMs();
+    user = {
+      id: newId(),
       phone: demoPhone,
       passwordHash: await bcrypt.hash('123456', 10),
       nickname: '演示用户',
       handle: '@演示用户',
-      joinDate: '2026-01'
-    });
+      avatar: 'images/author-user-me.jpg',
+      bio: '',
+      type: 'member',
+      joinDate: '2026-01',
+      createdAt: now,
+      updatedAt: now
+    };
+    await dbm.db.insert(users).values(user);
     console.log('[seed] 创建演示用户', demoPhone, '/ 123456');
   }
 
-  const workCount = await Work.countDocuments();
+  const workCountRows = await dbm.db.select({ n: sql`count(*)`.mapWith(Number) }).from(works);
+  const workCount = workCountRows[0] ? workCountRows[0].n : 0;
   if (workCount === 0) {
-    await Work.create([
+    const now = nowMs();
+    await dbm.db.insert(works).values([
       {
-        userId: user._id,
+        id: newId(),
+        userId: user.id,
         title: '锦鲤跃春',
         image: 'images/gallery-work-1.jpg',
         tag: '节庆系列',
         desc: 'DIY 捏制的锦鲤造型',
-        publishedAt: new Date('2026-05-12'),
-        status: 'published'
+        publishedAt: new Date('2026-05-12').getTime(),
+        status: 'published',
+        workType: 'model',
+        createdAt: now,
+        updatedAt: now
       },
       {
-        userId: user._id,
+        id: newId(),
+        userId: user.id,
         title: '寿桃福满',
         image: 'images/gallery-work-2.jpg',
         tag: '祝寿系列',
         desc: '寿桃组合',
-        publishedAt: new Date('2026-05-08'),
-        status: 'published'
+        publishedAt: new Date('2026-05-08').getTime(),
+        status: 'published',
+        workType: 'model',
+        createdAt: now,
+        updatedAt: now
       }
     ]);
     console.log('[seed] 写入示例展厅作品');

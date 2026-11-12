@@ -1,5 +1,7 @@
 const express = require('express');
-const Artisan = require('../models/Artisan');
+const { eq, desc, asc } = require('drizzle-orm');
+const dbm = require('../db/client');
+const { newId, nowMs, parseJsonArray, parseJsonObject, stringifyJson } = require('../db/helpers');
 const { requireAdmin } = require('../middleware/auth');
 const requireDb = require('../middleware/requireDb');
 const { uploadArtisanFiles } = require('../middleware/upload');
@@ -19,12 +21,6 @@ function uploadArtisanMiddleware(req, res, next) {
     }
     next();
   });
-}
-
-function markArtisanModified(doc) {
-  doc.markModified('portfolio');
-  doc.markModified('contact');
-  doc.markModified('wechat');
 }
 
 function storedUploadPath(raw) {
@@ -71,23 +67,25 @@ function mapWechat(w) {
 
 function mapArtisan(doc, detailed) {
   if (!doc) return null;
-  const o = doc.toJSON ? doc.toJSON() : doc;
+  const portfolio = parseJsonArray(doc.portfolio);
+  const contact = parseJsonObject(doc.contact);
+  const wechat = parseJsonObject(doc.wechat, null);
   const base = {
-    id: o.id,
-    name: o.name,
-    title: o.title,
-    bio: o.bio,
-    image: publicUrl(storedUploadPath(o.image) || o.image),
-    tags: o.tags || [],
-    sortOrder: o.sortOrder
+    id: doc.id,
+    name: doc.name,
+    title: doc.title,
+    bio: doc.bio,
+    image: publicUrl(storedUploadPath(doc.image) || doc.image),
+    tags: parseJsonArray(doc.tags),
+    sortOrder: doc.sortOrder
   };
   if (!detailed) return base;
   return Object.assign(base, {
-    imagePath: storedUploadPath(o.image) || o.image || '',
-    wechatQrPath: storedUploadPath(o.wechat && o.wechat.qr) || (o.wechat && o.wechat.qr) || '',
-    portfolio: mapPortfolio(o.portfolio),
-    contact: mapContact(o.contact),
-    wechat: mapWechat(o.wechat)
+    imagePath: storedUploadPath(doc.image) || doc.image || '',
+    wechatQrPath: storedUploadPath(wechat && wechat.qr) || (wechat && wechat.qr) || '',
+    portfolio: mapPortfolio(portfolio),
+    contact: mapContact(contact),
+    wechat: mapWechat(wechat)
   });
 }
 
@@ -140,42 +138,51 @@ function applyArtisanFields(doc, body, files) {
   if (body.title !== undefined) doc.title = body.title;
   if (body.bio !== undefined) doc.bio = body.bio;
   if (body.sortOrder !== undefined) doc.sortOrder = parseInt(body.sortOrder, 10) || 0;
-  if (body.tags !== undefined) doc.tags = parseTags(body.tags);
+  if (body.tags !== undefined) doc.tags = stringifyJson(parseTags(body.tags));
 
   if (body.portfolio !== undefined) {
-    doc.portfolio = parsePortfolio(body.portfolio, files);
+    doc.portfolio = stringifyJson(parsePortfolio(body.portfolio, files));
   }
 
-  doc.contact = doc.contact || {};
-  if (body.contactShopName !== undefined) doc.contact.shopName = body.contactShopName;
-  if (body.contactAddress !== undefined) doc.contact.address = body.contactAddress;
-  if (body.contactHours !== undefined) doc.contact.hours = body.contactHours;
-  if (body.contactMain !== undefined) doc.contact.main = body.contactMain;
-  if (body.contactNote !== undefined) doc.contact.note = body.contactNote;
-  if (body.contactPhone !== undefined) doc.contact.phone = body.contactPhone;
+  var contact = parseJsonObject(doc.contact);
+  if (body.contactShopName !== undefined) contact.shopName = body.contactShopName;
+  if (body.contactAddress !== undefined) contact.address = body.contactAddress;
+  if (body.contactHours !== undefined) contact.hours = body.contactHours;
+  if (body.contactMain !== undefined) contact.main = body.contactMain;
+  if (body.contactNote !== undefined) contact.note = body.contactNote;
+  if (body.contactPhone !== undefined) contact.phone = body.contactPhone;
+  doc.contact = stringifyJson(contact);
 
-  doc.wechat = doc.wechat || {};
-  if (body.wechatId !== undefined) doc.wechat.id = body.wechatId;
-  if (body.wechatTip !== undefined) doc.wechat.tip = body.wechatTip;
+  var wechat = parseJsonObject(doc.wechat);
+  if (body.wechatId !== undefined) wechat.id = body.wechatId;
+  if (body.wechatTip !== undefined) wechat.tip = body.wechatTip;
 
   if (files && files.wechatQr && files.wechatQr[0]) {
-    doc.wechat.qr = '/uploads/artisans/wechat/' + files.wechatQr[0].filename;
+    wechat.qr = '/uploads/artisans/wechat/' + files.wechatQr[0].filename;
   } else if (body.wechatQrKeep !== undefined && body.wechatQrKeep !== '') {
-    doc.wechat.qr = storedUploadPath(body.wechatQrKeep);
+    wechat.qr = storedUploadPath(body.wechatQrKeep);
   }
+  doc.wechat = stringifyJson(wechat);
 
   if (files && files.image && files.image[0]) {
     doc.image = '/uploads/artisans/' + files.image[0].filename;
   } else if (body.imageKeep !== undefined && body.imageKeep !== '') {
     doc.image = storedUploadPath(body.imageKeep);
   }
+  doc.updatedAt = nowMs();
+  return doc;
 }
 
 /** GET /api/artisans — 合作艺人列表（公开） */
 router.get(
   '/',
+  requireDb,
   asyncHandler(async function (_req, res) {
-    const items = await Artisan.find().sort({ sortOrder: 1, createdAt: -1 });
+    const { artisans } = dbm.schema;
+    const items = await dbm.db
+      .select()
+      .from(artisans)
+      .orderBy(asc(artisans.sortOrder), desc(artisans.createdAt));
     res.json({
       ok: true,
       data: items.map(function (doc) {
@@ -188,8 +195,11 @@ router.get(
 /** GET /api/artisans/:id — 详情（公开，含作品与联系方式） */
 router.get(
   '/:id',
+  requireDb,
   asyncHandler(async function (req, res) {
-    const doc = await Artisan.findById(req.params.id);
+    const { artisans } = dbm.schema;
+    const rows = await dbm.db.select().from(artisans).where(eq(artisans.id, req.params.id)).limit(1);
+    const doc = rows[0];
     if (!doc) return res.status(404).json({ ok: false, message: '艺人不存在' });
     res.json({ ok: true, data: mapArtisan(doc, true) });
   })
@@ -198,17 +208,6 @@ router.get(
 const admin = express.Router();
 admin.use(requireAdmin);
 admin.use(requireDb);
-
-function saveWithTimeout(doc, ms) {
-  return Promise.race([
-    doc.save(),
-    new Promise(function (_resolve, reject) {
-      setTimeout(function () {
-        reject(new Error('数据库保存超时，请检查 MongoDB 是否正常'));
-      }, ms || 15000);
-    })
-  ]);
-}
 
 /** POST /api/admin/artisans — 新增 */
 admin.post(
@@ -219,11 +218,25 @@ admin.post(
     if (!name || !String(name).trim()) {
       return res.status(400).json({ ok: false, message: '姓名不能为空' });
     }
-    const doc = new Artisan();
+    const { artisans } = dbm.schema;
+    const now = nowMs();
+    const doc = {
+      id: newId(),
+      name: '',
+      title: '',
+      bio: '',
+      image: '',
+      tags: '[]',
+      sortOrder: 0,
+      portfolio: '[]',
+      contact: '{}',
+      wechat: '{}',
+      createdAt: now,
+      updatedAt: now
+    };
     applyArtisanFields(doc, req.body, req.files);
     if (!doc.image && req.body.image) doc.image = req.body.image;
-    markArtisanModified(doc);
-    await saveWithTimeout(doc);
+    await dbm.db.insert(artisans).values(doc);
     res.status(201).json({ ok: true, data: mapArtisan(doc, true) });
   })
 );
@@ -233,12 +246,18 @@ admin.put(
   '/:id',
   uploadArtisanMiddleware,
   asyncHandler(async function (req, res) {
-    const doc = await Artisan.findById(req.params.id);
+    const { artisans } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(artisans)
+      .where(eq(artisans.id, req.params.id))
+      .limit(1);
+    const doc = rows[0];
     if (!doc) return res.status(404).json({ ok: false, message: '艺人不存在' });
     applyArtisanFields(doc, req.body, req.files);
-    markArtisanModified(doc);
-    await saveWithTimeout(doc);
-    res.json({ ok: true, data: mapArtisan(doc, true) });
+    const { id, createdAt, ...patch } = doc;
+    await dbm.db.update(artisans).set(patch).where(eq(artisans.id, id));
+    res.json({ ok: true, data: mapArtisan(Object.assign({}, doc), true) });
   })
 );
 
@@ -247,12 +266,18 @@ admin.post(
   '/:id',
   uploadArtisanMiddleware,
   asyncHandler(async function (req, res) {
-    const doc = await Artisan.findById(req.params.id);
+    const { artisans } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(artisans)
+      .where(eq(artisans.id, req.params.id))
+      .limit(1);
+    const doc = rows[0];
     if (!doc) return res.status(404).json({ ok: false, message: '艺人不存在' });
     applyArtisanFields(doc, req.body, req.files);
-    markArtisanModified(doc);
-    await saveWithTimeout(doc);
-    res.json({ ok: true, data: mapArtisan(doc, true) });
+    const { id, createdAt, ...patch } = doc;
+    await dbm.db.update(artisans).set(patch).where(eq(artisans.id, id));
+    res.json({ ok: true, data: mapArtisan(Object.assign({}, doc), true) });
   })
 );
 
@@ -260,8 +285,14 @@ admin.post(
 admin.delete(
   '/:id',
   asyncHandler(async function (req, res) {
-    const doc = await Artisan.findByIdAndDelete(req.params.id);
-    if (!doc) return res.status(404).json({ ok: false, message: '艺人不存在' });
+    const { artisans } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(artisans)
+      .where(eq(artisans.id, req.params.id))
+      .limit(1);
+    if (!rows.length) return res.status(404).json({ ok: false, message: '艺人不存在' });
+    await dbm.db.delete(artisans).where(eq(artisans.id, req.params.id));
     res.json({ ok: true, message: '已删除' });
   })
 );

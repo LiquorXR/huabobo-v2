@@ -1,7 +1,7 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const StudioModel = require('../models/StudioModel');
-const StudioModelCategory = require('../models/StudioModelCategory');
+const { eq, and, desc, sql } = require('drizzle-orm');
+const dbm = require('../db/client');
+const { newId, nowMs } = require('../db/helpers');
 const { requireAdmin } = require('../middleware/auth');
 const requireDb = require('../middleware/requireDb');
 const { uploadStudioModelFiles } = require('../middleware/upload');
@@ -11,49 +11,60 @@ const { persistDataImage } = require('../utils/workImage');
 
 const router = express.Router();
 
-function categoryNameOf(doc) {
-  const cat = doc && (doc.categoryId || doc.category);
-  if (!cat) return '';
-  if (typeof cat === 'object' && cat.name) return cat.name;
-  return '';
-}
-
-function categoryIdOf(doc) {
-  const cat = doc && doc.categoryId;
-  if (!cat) return '';
-  if (typeof cat === 'object' && cat._id) return cat._id.toString();
-  if (typeof cat === 'object' && cat.id) return String(cat.id);
-  return String(cat);
-}
-
-function mapStudioModel(doc) {
-  if (!doc) return null;
-  const o = doc.toJSON ? doc.toJSON() : doc;
+function mapStudioModel(row) {
+  if (!row) return null;
   return {
-    id: o.id,
-    name: o.name,
-    desc: o.desc,
-    glbUrl: publicUrl(o.glbUrl),
-    thumbnail: publicUrl(o.thumbnail),
-    categoryId: categoryIdOf(o),
-    categoryName: categoryNameOf(o),
-    sortOrder: o.sortOrder || 0,
-    enabled: o.enabled !== false,
-    createdAt: formatDateTime(o.createdAt),
-    updatedAt: formatDateTime(o.updatedAt)
+    id: row.id,
+    name: row.name,
+    desc: row.desc,
+    glbUrl: publicUrl(row.glbUrl),
+    thumbnail: publicUrl(row.thumbnail),
+    categoryId: row.categoryId || '',
+    categoryName: row.categoryName || '',
+    sortOrder: row.sortOrder || 0,
+    enabled: row.enabled !== false && row.enabled !== 0,
+    createdAt: formatDateTime(row.createdAt),
+    updatedAt: formatDateTime(row.updatedAt)
   };
 }
 
 async function resolveCategory(categoryId) {
-  if (!categoryId || !mongoose.Types.ObjectId.isValid(String(categoryId))) {
-    return null;
-  }
-  return StudioModelCategory.findById(categoryId);
+  if (!categoryId || !String(categoryId).trim()) return null;
+  const { studioModelCategories } = dbm.schema;
+  const rows = await dbm.db
+    .select()
+    .from(studioModelCategories)
+    .where(eq(studioModelCategories.id, String(categoryId).trim()))
+    .limit(1);
+  return rows[0] || null;
+}
+
+async function fetchModels(filter) {
+  const { studioModels, studioModelCategories } = dbm.schema;
+  return dbm.db
+    .select({
+      id: studioModels.id,
+      name: studioModels.name,
+      desc: studioModels.desc,
+      glbUrl: studioModels.glbUrl,
+      thumbnail: studioModels.thumbnail,
+      categoryId: studioModels.categoryId,
+      categoryName: studioModelCategories.name,
+      sortOrder: studioModels.sortOrder,
+      enabled: studioModels.enabled,
+      createdAt: studioModels.createdAt,
+      updatedAt: studioModels.updatedAt
+    })
+    .from(studioModels)
+    .leftJoin(studioModelCategories, eq(studioModels.categoryId, studioModelCategories.id))
+    .where(filter)
+    .orderBy(desc(studioModels.sortOrder), desc(studioModels.createdAt));
 }
 
 /** GET /api/studio-models — 工作台模型库（公开，按分类筛选） */
 router.get(
   '/',
+  requireDb,
   asyncHandler(async function (req, res) {
     res.set('Cache-Control', 'no-store');
     const categoryId = String((req.query && req.query.categoryId) || '').trim();
@@ -61,24 +72,24 @@ router.get(
       return res.status(400).json({ ok: false, message: '请选择模型分类' });
     }
     const category = await resolveCategory(categoryId);
-    if (!category || category.enabled === false) {
+    if (!category || category.enabled === false || category.enabled === 0) {
       return res.status(404).json({ ok: false, message: '分类不存在' });
     }
-    const items = await StudioModel.find({
-      enabled: { $ne: false },
-      categoryId: category._id
-    })
-      .populate('categoryId', 'name')
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .limit(100);
+    const { studioModels } = dbm.schema;
+    const items = await fetchModels(
+      and(eq(studioModels.enabled, true), eq(studioModels.categoryId, category.id))
+    );
+    const list = (items || []).filter(function (m) {
+      return m.enabled !== false && m.enabled !== 0;
+    });
     res.json({
       ok: true,
       data: {
         category: {
-          id: category._id.toString(),
+          id: category.id,
           name: category.name
         },
-        list: items.map(mapStudioModel)
+        list: list.slice(0, 100).map(mapStudioModel)
       }
     });
   })
@@ -87,17 +98,26 @@ router.get(
 /** POST /api/studio-models/:id/thumbnail — 工作台根据 GLB 自动补缩略图（仅空封面时写入） */
 router.post(
   '/:id/thumbnail',
+  requireDb,
   asyncHandler(async function (req, res) {
-    const doc = await StudioModel.findById(req.params.id);
+    const { studioModels } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(studioModels)
+      .where(eq(studioModels.id, req.params.id))
+      .limit(1);
+    const doc = rows[0];
     if (!doc) return res.status(404).json({ ok: false, message: '模型不存在' });
     const raw = (req.body && (req.body.thumbnailBase64 || req.body.image)) || '';
-    const saved = persistDataImage(String(raw), 'models/thumbs', doc._id.toString());
+    const saved = persistDataImage(String(raw), 'models/thumbs', doc.id);
     if (!saved) {
       return res.status(400).json({ ok: false, message: '缩略图无效' });
     }
-    doc.thumbnail = saved;
-    await doc.save();
-    res.json({ ok: true, data: mapStudioModel(doc) });
+    await dbm.db
+      .update(studioModels)
+      .set({ thumbnail: saved, updatedAt: nowMs() })
+      .where(eq(studioModels.id, doc.id));
+    res.json({ ok: true, data: mapStudioModel(Object.assign({}, doc, { thumbnail: saved })) });
   })
 );
 
@@ -109,16 +129,15 @@ admin.use(requireDb);
 admin.get(
   '/',
   asyncHandler(async function (req, res) {
-    const filter = {};
+    const { studioModels } = dbm.schema;
     const categoryId = String((req.query && req.query.categoryId) || '').trim();
+    let filter;
     if (categoryId) {
       const category = await resolveCategory(categoryId);
       if (!category) return res.status(404).json({ ok: false, message: '分类不存在' });
-      filter.categoryId = category._id;
+      filter = eq(studioModels.categoryId, category.id);
     }
-    const items = await StudioModel.find(filter)
-      .populate('categoryId', 'name')
-      .sort({ sortOrder: 1, createdAt: -1 });
+    const items = await fetchModels(filter);
     res.json({ ok: true, data: { list: items.map(mapStudioModel) } });
   })
 );
@@ -135,6 +154,7 @@ admin.post(
     });
   },
   asyncHandler(async function (req, res) {
+    const { studioModels } = dbm.schema;
     const { name, desc, sortOrder, categoryId } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ ok: false, message: '请填写模型名称' });
@@ -147,18 +167,25 @@ admin.post(
       return res.status(400).json({ ok: false, message: '请上传 GLB 模型文件' });
     }
     const glbUrl = '/uploads/models/' + req.files.glb[0].filename;
-    let thumbnail = pickThumbnailPath(req.files, req.body);
-    const doc = await StudioModel.create({
+    const thumbnail = pickThumbnailPath(req.files, req.body);
+    const now = nowMs();
+    const row = {
+      id: newId(),
       name: String(name).trim(),
       desc: desc || '',
       glbUrl: glbUrl,
       thumbnail: thumbnail,
-      categoryId: category._id,
+      categoryId: category.id,
       sortOrder: parseInt(sortOrder, 10) || 0,
-      enabled: true
+      enabled: true,
+      createdAt: now,
+      updatedAt: now
+    };
+    await dbm.db.insert(studioModels).values(row);
+    res.status(201).json({
+      ok: true,
+      data: mapStudioModel(Object.assign({}, row, { categoryName: category.name }))
     });
-    await doc.populate('categoryId', 'name');
-    res.status(201).json({ ok: true, data: mapStudioModel(doc) });
   })
 );
 
@@ -174,48 +201,59 @@ admin.put(
     });
   },
   asyncHandler(async function (req, res) {
-    const doc = await StudioModel.findById(req.params.id);
+    const { studioModels } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(studioModels)
+      .where(eq(studioModels.id, req.params.id))
+      .limit(1);
+    const doc = rows[0];
     if (!doc) return res.status(404).json({ ok: false, message: '模型不存在' });
 
     const body = req.body || {};
-    if (body.name !== undefined) doc.name = String(body.name).trim();
-    if (body.desc !== undefined) doc.desc = String(body.desc);
-    if (body.sortOrder !== undefined) doc.sortOrder = parseInt(body.sortOrder, 10) || 0;
-    if (body.enabled !== undefined) doc.enabled = body.enabled === 'true' || body.enabled === true;
+    const patch = { updatedAt: nowMs() };
+    if (body.name !== undefined) patch.name = String(body.name).trim();
+    if (body.desc !== undefined) patch.desc = String(body.desc);
+    if (body.sortOrder !== undefined) patch.sortOrder = parseInt(body.sortOrder, 10) || 0;
+    if (body.enabled !== undefined) patch.enabled = body.enabled === 'true' || body.enabled === true;
     if (body.categoryId !== undefined) {
       const category = await resolveCategory(body.categoryId);
       if (!category) {
         return res.status(400).json({ ok: false, message: '请选择归属分类' });
       }
-      doc.categoryId = category._id;
+      patch.categoryId = category.id;
     }
-    if (!doc.categoryId) {
+    if (!doc.categoryId && patch.categoryId === undefined) {
       return res.status(400).json({ ok: false, message: '请选择归属分类' });
     }
 
     const newGlb = !!(req.files && req.files.glb && req.files.glb[0]);
     if (newGlb) {
-      doc.glbUrl = '/uploads/models/' + req.files.glb[0].filename;
+      patch.glbUrl = '/uploads/models/' + req.files.glb[0].filename;
     } else if (body.glbUrlKeep) {
-      doc.glbUrl = normalizeStoredPath(body.glbUrlKeep);
+      patch.glbUrl = normalizeStoredPath(body.glbUrlKeep);
     }
 
     const nextThumb = pickThumbnailPath(req.files, body);
     if (nextThumb) {
-      doc.thumbnail = nextThumb;
+      patch.thumbnail = nextThumb;
     } else if (newGlb) {
-      doc.thumbnail = '';
+      patch.thumbnail = '';
     } else if (body.thumbnailKeep !== undefined) {
-      doc.thumbnail = normalizeStoredPath(body.thumbnailKeep);
+      patch.thumbnail = normalizeStoredPath(body.thumbnailKeep);
     }
 
-    if (!doc.name) {
+    const merged = Object.assign({}, doc, patch);
+    if (!merged.name) {
       return res.status(400).json({ ok: false, message: '模型名称不能为空' });
     }
 
-    await doc.save();
-    await doc.populate('categoryId', 'name');
-    res.json({ ok: true, data: mapStudioModel(doc) });
+    await dbm.db.update(studioModels).set(patch).where(eq(studioModels.id, doc.id));
+    const category = merged.categoryId ? await resolveCategory(merged.categoryId) : null;
+    res.json({
+      ok: true,
+      data: mapStudioModel(Object.assign({}, merged, { categoryName: category ? category.name : '' }))
+    });
   })
 );
 
@@ -223,8 +261,14 @@ admin.put(
 admin.delete(
   '/:id',
   asyncHandler(async function (req, res) {
-    const doc = await StudioModel.findByIdAndDelete(req.params.id);
-    if (!doc) return res.status(404).json({ ok: false, message: '模型不存在' });
+    const { studioModels } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(studioModels)
+      .where(eq(studioModels.id, req.params.id))
+      .limit(1);
+    if (!rows.length) return res.status(404).json({ ok: false, message: '模型不存在' });
+    await dbm.db.delete(studioModels).where(eq(studioModels.id, req.params.id));
     res.json({ ok: true, message: '已删除' });
   })
 );

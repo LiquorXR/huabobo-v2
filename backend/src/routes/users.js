@@ -1,10 +1,8 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const User = require('../models/User');
-const Work = require('../models/Work');
-const Comment = require('../models/Comment');
-const Like = require('../models/Like');
+const { eq, and, desc, sql } = require('drizzle-orm');
+const dbm = require('../db/client');
+const { newId, nowMs } = require('../db/helpers');
 const { requireAdmin } = require('../middleware/auth');
 const requireDb = require('../middleware/requireDb');
 const asyncHandler = require('../utils/asyncHandler');
@@ -14,18 +12,24 @@ const { uploadUserAvatar } = require('../middleware/upload');
 const router = express.Router();
 
 function mapUser(u) {
-  const o = u.toJSON ? u.toJSON() : u;
+  if (!u) return null;
   return {
-    id: o.id,
-    phone: o.phone,
-    nickname: o.nickname,
-    handle: o.handle,
-    avatar: publicUrl(o.avatar) || o.avatar,
-    bio: o.bio,
-    type: o.type,
-    joinDate: o.joinDate,
-    createdAt: formatDateTime(o.createdAt)
+    id: u.id,
+    phone: u.phone,
+    nickname: u.nickname,
+    handle: u.handle,
+    avatar: publicUrl(u.avatar) || u.avatar,
+    bio: u.bio,
+    type: u.type,
+    joinDate: u.joinDate,
+    createdAt: formatDateTime(u.createdAt)
   };
+}
+
+function escapeLike(s) {
+  return String(s).replace(/[\\%_]/g, function (c) {
+    return '\\' + c;
+  });
 }
 
 /** POST /api/users/register — 用户注册（公开） */
@@ -45,23 +49,31 @@ router.post(
       return res.status(400).json({ ok: false, message: '密码至少 6 位' });
     }
 
-    const exists = await User.findOne({ phone: phoneStr });
-    if (exists) {
+    const { users } = dbm.schema;
+    const exists = await dbm.db.select().from(users).where(eq(users.phone, phoneStr)).limit(1);
+    if (exists.length) {
       return res.status(409).json({ ok: false, message: '该手机号已注册' });
     }
 
     const nick = (nickname || '新用户').trim();
     const hash = await bcrypt.hash(String(password), 10);
-    const user = await User.create({
+    const now = nowMs();
+    const row = {
+      id: newId(),
       phone: phoneStr,
       passwordHash: hash,
       nickname: nick,
       handle: '@' + nick,
+      avatar: 'images/author-user-me.jpg',
+      bio: '指间塑新成员，期待你的第一件 DIY 作品。',
+      type: 'member',
       joinDate: new Date().toISOString().slice(0, 7),
-      bio: '指间塑新成员，期待你的第一件 DIY 作品。'
-    });
+      createdAt: now,
+      updatedAt: now
+    };
+    await dbm.db.insert(users).values(row);
 
-    res.status(201).json({ ok: true, userId: user._id.toString(), user: mapUser(user) });
+    res.status(201).json({ ok: true, userId: row.id, user: mapUser(row) });
   })
 );
 
@@ -74,7 +86,13 @@ router.post(
     if (!phone || !password) {
       return res.status(400).json({ ok: false, message: '请填写手机号和密码' });
     }
-    const user = await User.findOne({ phone: String(phone).trim() });
+    const { users } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(users)
+      .where(eq(users.phone, String(phone).trim()))
+      .limit(1);
+    const user = rows[0];
     if (!user) {
       return res.status(401).json({ ok: false, message: '账号或密码错误' });
     }
@@ -82,7 +100,7 @@ router.post(
     if (!match) {
       return res.status(401).json({ ok: false, message: '账号或密码错误' });
     }
-    res.json({ ok: true, userId: user._id.toString(), user: mapUser(user) });
+    res.json({ ok: true, userId: user.id, user: mapUser(user) });
   })
 );
 
@@ -99,25 +117,24 @@ router.post(
     });
   },
   asyncHandler(async function (req, res) {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(404).json({ ok: false, message: '用户不存在' });
-    }
     if (!req.file) {
       return res.status(400).json({ ok: false, message: '请选择图片' });
     }
-    const user = await User.findById(req.params.id);
+    const { users } = dbm.schema;
+    const rows = await dbm.db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+    const user = rows[0];
     if (!user) return res.status(404).json({ ok: false, message: '用户不存在' });
-    user.avatar = '/uploads/users/' + req.file.filename;
-    await user.save();
-    res.json({ ok: true, data: mapUser(user) });
+    const avatar = '/uploads/users/' + req.file.filename;
+    await dbm.db
+      .update(users)
+      .set({ avatar: avatar, updatedAt: nowMs() })
+      .where(eq(users.id, user.id));
+    res.json({ ok: true, data: mapUser(Object.assign({}, user, { avatar: avatar })) });
   })
 );
 
 /** PATCH/POST /api/users/:id/profile — 修改昵称 */
 async function updateUserProfile(req, res) {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(404).json({ ok: false, message: '用户不存在' });
-  }
   const { nickname } = req.body || {};
   const nick = String(nickname || '').trim();
   if (!nick) {
@@ -126,12 +143,15 @@ async function updateUserProfile(req, res) {
   if (nick.length > 20) {
     return res.status(400).json({ ok: false, message: '昵称最多 20 字' });
   }
-  const user = await User.findById(req.params.id);
+  const { users } = dbm.schema;
+  const rows = await dbm.db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+  const user = rows[0];
   if (!user) return res.status(404).json({ ok: false, message: '用户不存在' });
-  user.nickname = nick;
-  user.handle = '@' + nick;
-  await user.save();
-  res.json({ ok: true, data: mapUser(user) });
+  await dbm.db
+    .update(users)
+    .set({ nickname: nick, handle: '@' + nick, updatedAt: nowMs() })
+    .where(eq(users.id, user.id));
+  res.json({ ok: true, data: mapUser(Object.assign({}, user, { nickname: nick, handle: '@' + nick })) });
 }
 
 router.patch('/:id/profile', requireDb, asyncHandler(updateUserProfile));
@@ -140,11 +160,11 @@ router.post('/:id/profile', requireDb, asyncHandler(updateUserProfile));
 /** GET /api/users/:id — 用户公开资料（供个人主页） */
 router.get(
   '/:id',
+  requireDb,
   asyncHandler(async function (req, res) {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(404).json({ ok: false, message: '用户不存在' });
-    }
-    const user = await User.findById(req.params.id);
+    const { users } = dbm.schema;
+    const rows = await dbm.db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+    const user = rows[0];
     if (!user) return res.status(404).json({ ok: false, message: '用户不存在' });
     res.json({ ok: true, data: mapUser(user) });
   })
@@ -162,19 +182,31 @@ admin.get(
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
     const keyword = (req.query.keyword || '').trim();
+    const { users } = dbm.schema;
 
-    const filter = {};
+    const conds = [];
     if (keyword) {
-      filter.$or = [
-        { phone: new RegExp(keyword, 'i') },
-        { nickname: new RegExp(keyword, 'i') }
-      ];
+      const pattern = '%' + escapeLike(keyword.toLowerCase()) + '%';
+      conds.push(
+        sql`(${sql`lower(${users.phone})`} LIKE ${pattern} ESCAPE '\\' OR ${sql`lower(${users.nickname})`} LIKE ${pattern} ESCAPE '\\')`
+      );
     }
+    const where = conds.length ? and(...conds) : undefined;
 
-    const [items, total] = await Promise.all([
-      User.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      User.countDocuments(filter)
+    const [items, totalRows] = await Promise.all([
+      dbm.db
+        .select()
+        .from(users)
+        .where(where)
+        .orderBy(desc(users.createdAt))
+        .limit(limit)
+        .offset(skip),
+      dbm.db
+        .select({ n: sql`count(*)`.mapWith(Number) })
+        .from(users)
+        .where(where)
     ]);
+    const total = totalRows[0] ? totalRows[0].n : 0;
 
     res.json({
       ok: true,
@@ -189,15 +221,14 @@ admin.get(
   })
 );
 
-/** DELETE /api/admin/users/:id */
+/** DELETE /api/admin/users/:id — 删除用户（作品/留言/点赞由外键级联删除） */
 admin.delete(
   '/:id',
   asyncHandler(async function (req, res) {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) return res.status(404).json({ ok: false, message: '用户不存在' });
-    await Work.deleteMany({ userId: user._id });
-    await Comment.deleteMany({ userId: user._id });
-    await Like.deleteMany({ userId: user._id });
+    const { users } = dbm.schema;
+    const rows = await dbm.db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+    if (!rows.length) return res.status(404).json({ ok: false, message: '用户不存在' });
+    await dbm.db.delete(users).where(eq(users.id, req.params.id));
     res.json({ ok: true, message: '用户已删除' });
   })
 );
@@ -210,10 +241,14 @@ admin.patch(
     if (!newPassword || String(newPassword).length < 6) {
       return res.status(400).json({ ok: false, message: '新密码至少 6 位' });
     }
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ ok: false, message: '用户不存在' });
-    user.passwordHash = await bcrypt.hash(String(newPassword), 10);
-    await user.save();
+    const { users } = dbm.schema;
+    const rows = await dbm.db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+    if (!rows.length) return res.status(404).json({ ok: false, message: '用户不存在' });
+    const passwordHash = await bcrypt.hash(String(newPassword), 10);
+    await dbm.db
+      .update(users)
+      .set({ passwordHash: passwordHash, updatedAt: nowMs() })
+      .where(eq(users.id, req.params.id));
     res.json({ ok: true, message: '密码已更新' });
   })
 );

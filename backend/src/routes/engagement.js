@@ -1,47 +1,56 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const Comment = require('../models/Comment');
-const Like = require('../models/Like');
-const Work = require('../models/Work');
-const User = require('../models/User');
+const { eq, and, desc } = require('drizzle-orm');
+const dbm = require('../db/client');
+const { newId, nowMs } = require('../db/helpers');
 const requireDb = require('../middleware/requireDb');
 const asyncHandler = require('../utils/asyncHandler');
 const { formatDateTime } = require('../utils/url');
 
 const router = express.Router();
 
-function mapComment(c) {
+function mapComment(row) {
   return {
-    id: c._id.toString(),
-    workId: c.workId.toString(),
-    userId: c.userId ? c.userId._id.toString() : '',
-    userName: c.userId ? c.userId.nickname : '用户',
-    userHandle: c.userId ? c.userId.handle || '' : '',
-    text: c.text,
-    createdAt: formatDateTime(c.createdAt)
+    id: row.id,
+    workId: row.workId,
+    userId: row.authorId || '',
+    userName: row.authorName || '用户',
+    userHandle: row.authorHandle || '',
+    text: row.text,
+    createdAt: formatDateTime(row.createdAt)
   };
 }
 
 async function buildWorkEngagement(workId, viewerId) {
-  const workObjectId = new mongoose.Types.ObjectId(workId);
-  const [comments, likes] = await Promise.all([
-    Comment.find({ workId: workObjectId })
-      .sort({ createdAt: -1 })
-      .populate('userId', 'nickname handle'),
-    Like.find({ workId: workObjectId })
+  const { comments, likes, users } = dbm.schema;
+  const [commentRows, likeRows] = await Promise.all([
+    dbm.db
+      .select({
+        id: comments.id,
+        workId: comments.workId,
+        text: comments.text,
+        createdAt: comments.createdAt,
+        authorId: users.id,
+        authorName: users.nickname,
+        authorHandle: users.handle
+      })
+      .from(comments)
+      .leftJoin(users, eq(comments.userId, users.id))
+      .where(eq(comments.workId, workId))
+      .orderBy(desc(comments.createdAt)),
+    dbm.db.select({ userId: likes.userId }).from(likes).where(eq(likes.workId, workId))
   ]);
 
-  const likerIds = likes.map(function (l) {
-    return l.userId.toString();
+  const likerIds = likeRows.map(function (l) {
+    return String(l.userId);
   });
   const likedByMe = viewerId ? likerIds.indexOf(String(viewerId)) !== -1 : false;
 
   return {
     workId: workId,
-    likeCount: likes.length,
+    likeCount: likeRows.length,
     likedByMe: likedByMe,
-    commentCount: comments.length,
-    comments: comments.map(mapComment)
+    commentCount: commentRows.length,
+    comments: commentRows.map(mapComment)
   };
 }
 
@@ -57,13 +66,10 @@ router.get(
       })
       .filter(Boolean);
     const viewerId = (req.query.viewerId || '').trim();
-    const validIds = rawIds.filter(function (id) {
-      return mongoose.Types.ObjectId.isValid(id);
-    });
 
     const map = {};
     await Promise.all(
-      validIds.map(async function (workId) {
+      rawIds.map(async function (workId) {
         map[workId] = await buildWorkEngagement(workId, viewerId);
       })
     );
@@ -81,22 +87,33 @@ router.post(
     if (!workId || !userId) {
       return res.status(400).json({ ok: false, message: '参数不完整' });
     }
-    if (!mongoose.Types.ObjectId.isValid(workId) || !mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ ok: false, message: '参数无效' });
-    }
 
-    const work = await Work.findById(workId);
-    if (!work) return res.status(404).json({ ok: false, message: '作品不存在' });
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ ok: false, message: '用户不存在' });
+    const { likes, works, users } = dbm.schema;
+    const work = await dbm.db.select().from(works).where(eq(works.id, workId)).limit(1);
+    if (!work.length) return res.status(404).json({ ok: false, message: '作品不存在' });
+    const user = await dbm.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user.length) return res.status(404).json({ ok: false, message: '用户不存在' });
 
-    const existing = await Like.findOne({ workId, userId });
+    const existing = await dbm.db
+      .select()
+      .from(likes)
+      .where(and(eq(likes.workId, workId), eq(likes.userId, userId)))
+      .limit(1);
     var liked;
-    if (existing) {
-      await existing.deleteOne();
+    if (existing.length) {
+      await dbm.db.delete(likes).where(eq(likes.id, existing[0].id));
       liked = false;
     } else {
-      await Like.create({ workId, userId });
+      try {
+        await dbm.db.insert(likes).values({ id: newId(), workId, userId, createdAt: nowMs() });
+      } catch (e) {
+        if (e && (e.code === '23505' || e.code === 'SQLITE_CONSTRAINT_UNIQUE')) {
+          const err = new Error('数据已存在');
+          err.status = 409;
+          throw err;
+        }
+        throw e;
+      }
       liked = true;
     }
 

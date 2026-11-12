@@ -6,5 +6,11 @@ backend/uploads/*
 .DS_Store
 __MACOSX/
 
+# local SQLite (DATABASE_URL=file:...)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # large seed models: uploaded manually after deploy, never committed
 assets/model-library/

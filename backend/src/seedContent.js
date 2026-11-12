@@ -1,6 +1,10 @@
 /**
  * 与前端 news.html、db-seed.js 一致的初始新闻 / 合作艺人数据
  */
+const { eq, sql } = require('drizzle-orm');
+const dbm = require('./db/client');
+const { newId, nowMs, stringifyJson } = require('./db/helpers');
+
 const INITIAL_NEWS = [
   {
     title: '指间塑文化传播平台正式上线',
@@ -112,53 +116,139 @@ const INITIAL_ARTISANS = [
   }
 ];
 
+function toMs(d) {
+  if (!d) return Date.now();
+  const t = d instanceof Date ? d.getTime() : new Date(d).getTime();
+  return Number.isNaN(t) ? Date.now() : t;
+}
+
 async function ensureSeedContent() {
-  const News = require('./models/News');
-  const Artisan = require('./models/Artisan');
+  const { news, artisans, aboutPages } = dbm.schema;
 
   for (const item of INITIAL_NEWS) {
-    await News.findOneAndUpdate({ title: item.title }, { $set: item }, { upsert: true, new: true });
+    const rows = await dbm.db.select().from(news).where(eq(news.title, item.title)).limit(1);
+    const now = nowMs();
+    if (rows[0]) {
+      await dbm.db
+        .update(news)
+        .set({
+          image: item.image,
+          summary: item.summary,
+          content: item.content,
+          publishedAt: toMs(item.publishedAt),
+          updatedAt: now
+        })
+        .where(eq(news.id, rows[0].id));
+    } else {
+      await dbm.db.insert(news).values({
+        id: newId(),
+        title: item.title,
+        image: item.image,
+        summary: item.summary,
+        content: item.content,
+        publishedAt: toMs(item.publishedAt),
+        createdAt: now,
+        updatedAt: now
+      });
+    }
   }
 
   for (const item of INITIAL_ARTISANS) {
-    var existing = await Artisan.findOne({ name: item.name });
-    if (existing) {
-      var changed = false;
-      ['title', 'bio', 'image', 'tags', 'sortOrder'].forEach(function (key) {
-        if (item[key] !== undefined && JSON.stringify(existing[key]) !== JSON.stringify(item[key])) {
-          existing[key] = item[key];
-          changed = true;
-        }
-      });
-      if (!(existing.portfolio && existing.portfolio.length) && item.portfolio) {
-        existing.portfolio = item.portfolio;
-        changed = true;
-      }
-      if (!(existing.contact && existing.contact.shopName) && item.contact) {
-        existing.contact = item.contact;
-        changed = true;
-      }
-      if (!(existing.wechat && existing.wechat.id) && item.wechat) {
-        existing.wechat = item.wechat;
-        changed = true;
-      }
-      if (changed) await existing.save();
+    const rows = await dbm.db
+      .select()
+      .from(artisans)
+      .where(eq(artisans.name, item.name))
+      .limit(1);
+    const now = nowMs();
+    const contact = item.contact || {};
+    const wechat = item.wechat || {};
+    if (rows[0]) {
+      const existing = rows[0];
+      await dbm.db
+        .update(artisans)
+        .set({
+          title: item.title,
+          bio: item.bio,
+          image: item.image,
+          tags: stringifyJson(item.tags || []),
+          sortOrder: item.sortOrder || 0,
+          portfolio: existing.portfolio && existing.portfolio !== '[]' ? existing.portfolio : stringifyJson(item.portfolio || []),
+          contact:
+            existing.contact && existing.contact !== '{}'
+              ? existing.contact
+              : stringifyJson({
+                  shopName: contact.shopName || '',
+                  address: contact.address || '',
+                  hours: contact.hours || '',
+                  main: contact.main || '',
+                  note: contact.note || '',
+                  phone: contact.phone || ''
+                }),
+          wechat:
+            existing.wechat && existing.wechat !== '{}'
+              ? existing.wechat
+              : stringifyJson({ id: wechat.id || '', qr: wechat.qr || '', tip: wechat.tip || '' }),
+          updatedAt: now
+        })
+        .where(eq(artisans.id, existing.id));
     } else {
-      await Artisan.create(item);
+      await dbm.db.insert(artisans).values({
+        id: newId(),
+        name: item.name,
+        title: item.title,
+        bio: item.bio,
+        image: item.image,
+        tags: stringifyJson(item.tags || []),
+        sortOrder: item.sortOrder || 0,
+        portfolio: stringifyJson(item.portfolio || []),
+        contact: stringifyJson({
+          shopName: contact.shopName || '',
+          address: contact.address || '',
+          hours: contact.hours || '',
+          main: contact.main || '',
+          note: contact.note || '',
+          phone: contact.phone || ''
+        }),
+        wechat: stringifyJson({ id: wechat.id || '', qr: wechat.qr || '', tip: wechat.tip || '' }),
+        createdAt: now,
+        updatedAt: now
+      });
     }
   }
 
   const { ensureStudioCategories } = require('./utils/studioCategories');
   await ensureStudioCategories();
 
-  const newsCount = await News.countDocuments();
-  const artisanCount = await Artisan.countDocuments();
+  const newsCountRows = await dbm.db.select({ n: sql`count(*)`.mapWith(Number) }).from(news);
+  const artisanCountRows = await dbm.db
+    .select({ n: sql`count(*)`.mapWith(Number) })
+    .from(artisans);
+  const newsCount = newsCountRows[0] ? newsCountRows[0].n : 0;
+  const artisanCount = artisanCountRows[0] ? artisanCountRows[0].n : 0;
 
-  const AboutPage = require('./models/AboutPage');
   const { getDefaultAboutData } = require('./constants/aboutDefaults');
-  const aboutExists = await AboutPage.findOne({ key: 'main' });
-  if (!aboutExists) {
-    await AboutPage.create(Object.assign({ key: 'main' }, getDefaultAboutData()));
+  const aboutExists = await dbm.db.select().from(aboutPages).limit(1);
+  if (!aboutExists.length) {
+    const defaults = getDefaultAboutData();
+    const now = nowMs();
+    await dbm.db.insert(aboutPages).values({
+      id: newId(),
+      key: 'main',
+      heroTitle: defaults.heroTitle || '',
+      heroSubtitle: defaults.heroSubtitle || '',
+      introTitle: defaults.introTitle || '',
+      introText: defaults.introText || '',
+      introImage: defaults.introImage || '',
+      values: stringifyJson(defaults.values || []),
+      printSectionTitle: defaults.printSectionTitle || '',
+      printSectionDesc: defaults.printSectionDesc || '',
+      printWorks: stringifyJson(defaults.printWorks || []),
+      joinTitle: defaults.joinTitle || '',
+      joinText: defaults.joinText || '',
+      contact: stringifyJson(defaults.contact || {}),
+      createdAt: now,
+      updatedAt: now
+    });
   }
 
   return { newsCount, artisanCount };

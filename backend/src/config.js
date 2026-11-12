@@ -52,9 +52,8 @@ function resolveUploadDir() {
 
 module.exports = {
   port: parseInt(process.env.PORT, 10) || 3000,
-  mongodbUri:
-    process.env.MONGODB_URI ||
-    'mongodb://mydb:%40Sq521521@127.0.0.1:27017/mydb?authSource=mydb',
+  /** postgres://user:pass@host:5432/db（生产） 或 file:./dev.db（本地 SQLite，相对 backend/ 目录） */
+  databaseUrl: process.env.DATABASE_URL || 'file:./dev.db',
   jwtSecret: process.env.JWT_SECRET || 'zhijiansu-dev-secret-change-in-production',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   adminUsername: ADMIN_USERNAME,

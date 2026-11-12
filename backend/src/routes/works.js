@@ -1,12 +1,12 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const Work = require('../models/Work');
-const Comment = require('../models/Comment');
-const Like = require('../models/Like');
+const { eq, and, desc, sql } = require('drizzle-orm');
+const dbm = require('../db/client');
+const { newId, nowMs } = require('../db/helpers');
 const asyncHandler = require('../utils/asyncHandler');
 const { formatDate } = require('../utils/url');
 const { persistWorkImage, normalizeWorkImage } = require('../utils/workImage');
 const { uploadWorkCover } = require('../middleware/upload');
+const requireDb = require('../middleware/requireDb');
 
 const router = express.Router();
 
@@ -18,13 +18,11 @@ function normalizeStoredImagePath(image) {
   if (!image) return '';
   var s = String(image);
   if (s.indexOf('/uploads/') >= 0) return s.slice(s.indexOf('/uploads/'));
-  if (/^https?:\/\//i.test(s) && s.indexOf('/uploads/') >= 0) {
-    return s.slice(s.indexOf('/uploads/'));
-  }
   return s;
 }
 
 async function saveWorkFromRequest(req) {
+  const { works, users } = dbm.schema;
   const body = req.body || {};
   const userId = String(body.userId || '').trim();
   const title = String(body.title || '').trim();
@@ -36,6 +34,12 @@ async function saveWorkFromRequest(req) {
     err.status = 400;
     throw err;
   }
+  const author = await dbm.db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!author.length) {
+    const err = new Error('用户不存在');
+    err.status = 400;
+    throw err;
+  }
 
   const payload = {
     userId,
@@ -43,7 +47,7 @@ async function saveWorkFromRequest(req) {
     tag: body.tag || '',
     desc: body.desc || '',
     workType: body.workType === 'ar_snapshot' ? 'ar_snapshot' : 'model',
-    publishedAt: publish ? new Date() : undefined,
+    publishedAt: publish ? nowMs() : null,
     status: publish ? 'published' : 'draft'
   };
 
@@ -62,29 +66,37 @@ async function saveWorkFromRequest(req) {
     imagePath = normalizeStoredImagePath(body.image);
   }
 
-  let doc;
-  if (id && mongoose.Types.ObjectId.isValid(id)) {
-    doc = await Work.findOne({ _id: id, userId });
+  let doc = null;
+  if (id) {
+    const rows = await dbm.db
+      .select()
+      .from(works)
+      .where(and(eq(works.id, id), eq(works.userId, userId)))
+      .limit(1);
+    doc = rows[0] || null;
     if (doc) {
-      doc.title = payload.title;
-      doc.tag = payload.tag;
-      doc.desc = payload.desc;
-      doc.status = payload.status;
-      if (body.workType) doc.workType = payload.workType;
-      if (publish) doc.publishedAt = doc.publishedAt || new Date();
+      const patch = {
+        title: payload.title,
+        tag: payload.tag,
+        desc: payload.desc,
+        status: payload.status,
+        updatedAt: nowMs()
+      };
+      if (body.workType) patch.workType = payload.workType;
+      if (publish && !doc.publishedAt) patch.publishedAt = nowMs();
       if (imagePath) {
-        if (imagePath.indexOf('data:image') === 0) {
-          doc.image = persistWorkImage(imagePath, doc._id.toString());
-        } else {
-          doc.image = imagePath;
-        }
+        patch.image =
+          imagePath.indexOf('data:image') === 0 ? persistWorkImage(imagePath, doc.id) : imagePath;
       }
-      await doc.save();
+      await dbm.db.update(works).set(patch).where(eq(works.id, doc.id));
+      doc = Object.assign({}, doc, patch);
     }
   }
 
   if (!doc) {
-    doc = await Work.create({
+    const now = nowMs();
+    const row = {
+      id: newId(),
       userId: payload.userId,
       title: payload.title,
       tag: payload.tag,
@@ -92,16 +104,16 @@ async function saveWorkFromRequest(req) {
       status: payload.status,
       workType: payload.workType,
       publishedAt: payload.publishedAt,
-      image: ''
-    });
+      image: '',
+      createdAt: now,
+      updatedAt: now
+    };
     if (imagePath) {
-      if (imagePath.indexOf('data:image') === 0) {
-        doc.image = persistWorkImage(imagePath, doc._id.toString());
-      } else {
-        doc.image = imagePath;
-      }
-      await doc.save();
+      row.image =
+        imagePath.indexOf('data:image') === 0 ? persistWorkImage(imagePath, row.id) : imagePath;
     }
+    await dbm.db.insert(works).values(row);
+    doc = row;
   }
 
   return doc;
@@ -109,55 +121,75 @@ async function saveWorkFromRequest(req) {
 
 function mapWorkResponse(doc) {
   return {
-    id: doc._id.toString(),
+    id: doc.id,
     status: doc.status,
     image: normalizeWorkImage(doc.image)
+  };
+}
+
+function mapWorkRow(w) {
+  return {
+    id: w.id,
+    userId: w.authorId || '',
+    authorName: w.authorName || '',
+    title: w.title,
+    image: normalizeWorkImage(w.image),
+    tag: w.tag,
+    desc: w.desc,
+    publishedAt: formatDate(w.publishedAt),
+    status: w.status,
+    workType: w.workType || 'model'
   };
 }
 
 /** GET /api/works — 展厅已发布作品；?userId= 可查某用户作品，?includeDraft=1 含草稿 */
 router.get(
   '/',
+  requireDb,
   asyncHandler(async function (req, res) {
+    const { works, users } = dbm.schema;
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
     const userId = (req.query.userId || '').trim();
     const includeDraft = req.query.includeDraft === '1' || req.query.includeDraft === 'true';
 
-    const filter = userId
-      ? includeDraft
-        ? { userId }
-        : { userId, status: 'published' }
-      : { status: 'published' };
+    const conds = [];
+    if (userId) conds.push(eq(works.userId, userId));
+    if (!(userId && includeDraft)) conds.push(eq(works.status, 'published'));
+    const where = conds.length ? and(...conds) : undefined;
 
-    const [items, total] = await Promise.all([
-      Work.find(filter)
-        .sort({ publishedAt: -1, createdAt: -1 })
-        .skip(skip)
+    const [items, totalRows] = await Promise.all([
+      dbm.db
+        .select({
+          id: works.id,
+          title: works.title,
+          image: works.image,
+          tag: works.tag,
+          desc: works.desc,
+          publishedAt: works.publishedAt,
+          status: works.status,
+          workType: works.workType,
+          createdAt: works.createdAt,
+          authorId: users.id,
+          authorName: users.nickname
+        })
+        .from(works)
+        .leftJoin(users, eq(works.userId, users.id))
+        .where(where)
+        .orderBy(sql`${works.publishedAt} DESC NULLS LAST`, desc(works.createdAt))
         .limit(limit)
-        .populate('userId', 'nickname handle avatar'),
-      Work.countDocuments(filter)
+        .offset(skip),
+      dbm.db
+        .select({ n: sql`count(*)`.mapWith(Number) })
+        .from(works)
+        .where(where)
     ]);
-
-    const list = items.map(function (w) {
-      return {
-        id: w._id.toString(),
-        userId: w.userId ? w.userId._id.toString() : '',
-        authorName: w.userId ? w.userId.nickname : '',
-        title: w.title,
-        image: normalizeWorkImage(w.image),
-        tag: w.tag,
-        desc: w.desc,
-        publishedAt: formatDate(w.publishedAt),
-        status: w.status,
-        workType: w.workType || 'model'
-      };
-    });
+    const total = totalRows[0] ? totalRows[0].n : 0;
 
     res.json({
       ok: true,
-      data: { list, total, page, limit, pages: Math.ceil(total / limit) || 1 }
+      data: { list: items.map(mapWorkRow), total, page, limit, pages: Math.ceil(total / limit) || 1 }
     });
   })
 );
@@ -165,30 +197,37 @@ router.get(
 /** GET /api/works/:id — 单件作品（公开，含草稿） */
 router.get(
   '/:id',
+  requireDb,
   asyncHandler(async function (req, res) {
-    const w = await Work.findById(req.params.id).populate('userId', 'nickname handle avatar');
+    const { works, users } = dbm.schema;
+    const items = await dbm.db
+      .select({
+        id: works.id,
+        title: works.title,
+        image: works.image,
+        tag: works.tag,
+        desc: works.desc,
+        publishedAt: works.publishedAt,
+        status: works.status,
+        workType: works.workType,
+        createdAt: works.createdAt,
+        authorId: users.id,
+        authorName: users.nickname
+      })
+      .from(works)
+      .leftJoin(users, eq(works.userId, users.id))
+      .where(eq(works.id, req.params.id))
+      .limit(1);
+    const w = items[0];
     if (!w) return res.status(404).json({ ok: false, message: '作品不存在' });
-    res.json({
-      ok: true,
-      data: {
-        id: w._id.toString(),
-        userId: w.userId ? w.userId._id.toString() : '',
-        authorName: w.userId ? w.userId.nickname : '',
-        title: w.title,
-        image: normalizeWorkImage(w.image),
-        tag: w.tag,
-        desc: w.desc,
-        publishedAt: formatDate(w.publishedAt),
-        status: w.status,
-        workType: w.workType || 'model'
-      }
-    });
+    res.json({ ok: true, data: mapWorkRow(w) });
   })
 );
 
 /** POST /api/works — 保存/发布作品（支持 JSON 或 multipart 上传 cover 封面） */
 router.post(
   '/',
+  requireDb,
   function (req, res, next) {
     var ct = String(req.headers['content-type'] || '');
     if (ct.indexOf('multipart/form-data') >= 0) {
@@ -210,24 +249,25 @@ router.post(
   })
 );
 
-/** DELETE /api/works/:id?userId= — 删除自己的作品（含草稿） */
+/** DELETE /api/works/:id?userId= — 删除自己的作品（含草稿，留言/点赞由外键级联删除） */
 router.delete(
   '/:id',
+  requireDb,
   asyncHandler(async function (req, res) {
     const userId = String(req.query.userId || (req.body && req.body.userId) || '').trim();
     if (!userId) {
       return res.status(400).json({ ok: false, message: '缺少 userId' });
     }
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ ok: false, message: '无效的作品 ID' });
-    }
-    const doc = await Work.findOne({ _id: req.params.id, userId });
-    if (!doc) {
+    const { works } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(works)
+      .where(and(eq(works.id, req.params.id), eq(works.userId, userId)))
+      .limit(1);
+    if (!rows.length) {
       return res.status(404).json({ ok: false, message: '作品不存在或无权删除' });
     }
-    await Comment.deleteMany({ workId: doc._id });
-    await Like.deleteMany({ workId: doc._id });
-    await doc.deleteOne();
+    await dbm.db.delete(works).where(eq(works.id, req.params.id));
     res.json({ ok: true });
   })
 );

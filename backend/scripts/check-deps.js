@@ -1,7 +1,7 @@
 /**
  * 启动前检查依赖是否已安装
  */
-var required = ['express', 'mongoose', 'cors', 'dotenv', 'jsonwebtoken', 'bcryptjs', 'morgan', 'multer'];
+var required = ['express', 'pg', 'better-sqlite3', 'drizzle-orm', 'cors', 'dotenv', 'jsonwebtoken', 'bcryptjs', 'morgan', 'multer', 'marked'];
 var missing = [];
 
 required.forEach(function (name) {

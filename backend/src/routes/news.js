@@ -1,6 +1,9 @@
 const express = require('express');
-const News = require('../models/News');
+const { eq, desc, sql } = require('drizzle-orm');
+const dbm = require('../db/client');
+const { newId, nowMs } = require('../db/helpers');
 const { requireAdmin } = require('../middleware/auth');
+const requireDb = require('../middleware/requireDb');
 const { uploadNewsImage } = require('../middleware/upload');
 const asyncHandler = require('../utils/asyncHandler');
 const { publicUrl, formatDate, formatDateTime } = require('../utils/url');
@@ -11,17 +14,16 @@ const router = express.Router();
 
 function mapNews(doc, detailed) {
   if (!doc) return null;
-  const o = doc.toJSON ? doc.toJSON() : doc;
   return {
-    id: o.id,
-    title: o.title,
-    image: publicUrl(o.image),
-    summary: o.summary,
-    content: detailed ? o.content : undefined,
-    contentHtml: detailed ? renderMarkdown(o.content) : undefined,
-    publishedAt: formatDate(o.publishedAt),
-    createdAt: formatDateTime(o.createdAt),
-    updatedAt: formatDateTime(o.updatedAt)
+    id: doc.id,
+    title: doc.title,
+    image: publicUrl(doc.image),
+    summary: doc.summary,
+    content: detailed ? doc.content : undefined,
+    contentHtml: detailed ? renderMarkdown(doc.content) : undefined,
+    publishedAt: formatDate(doc.publishedAt),
+    createdAt: formatDateTime(doc.createdAt),
+    updatedAt: formatDateTime(doc.updatedAt)
   };
 }
 
@@ -46,26 +48,34 @@ function parsePublishedAt(body) {
   if (body.publishedAt) {
     const s = String(body.publishedAt).trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-      return new Date(s + 'T12:00:00');
+      return new Date(s + 'T12:00:00').getTime();
     }
     const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) return d;
+    if (!Number.isNaN(d.getTime())) return d.getTime();
   }
-  return new Date();
+  return Date.now();
 }
 
 /** GET /api/news — 公开列表 */
 router.get(
   '/',
+  requireDb,
   asyncHandler(async function (req, res) {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
     const skip = (page - 1) * limit;
+    const { news } = dbm.schema;
 
-    const [items, total] = await Promise.all([
-      News.find().sort({ publishedAt: -1 }).skip(skip).limit(limit),
-      News.countDocuments()
+    const [items, totalRows] = await Promise.all([
+      dbm.db
+        .select()
+        .from(news)
+        .orderBy(desc(news.publishedAt))
+        .limit(limit)
+        .offset(skip),
+      dbm.db.select({ n: sql`count(*)`.mapWith(Number) }).from(news)
     ]);
+    const total = totalRows[0] ? totalRows[0].n : 0;
 
     res.json({
       ok: true,
@@ -85,8 +95,11 @@ router.get(
 /** GET /api/news/:id — 公开详情 */
 router.get(
   '/:id',
+  requireDb,
   asyncHandler(async function (req, res) {
-    const doc = await News.findById(req.params.id);
+    const { news } = dbm.schema;
+    const rows = await dbm.db.select().from(news).where(eq(news.id, req.params.id)).limit(1);
+    const doc = rows[0];
     if (!doc) return res.status(404).json({ ok: false, message: '文章不存在' });
     res.json({ ok: true, data: mapNews(doc, true) });
   })
@@ -94,6 +107,7 @@ router.get(
 
 const admin = express.Router();
 admin.use(requireAdmin);
+admin.use(requireDb);
 
 /** POST /api/admin/news/preview-content — 正文 Markdown 预览（与前台渲染规则一致） */
 admin.post(
@@ -134,15 +148,21 @@ admin.post(
     if (errMsg) {
       return res.status(400).json({ ok: false, message: errMsg });
     }
+    const { news } = dbm.schema;
     const imagePath = req.file ? '/uploads/news/' + req.file.filename : req.body.image || '';
-    const doc = await News.create({
+    const now = nowMs();
+    const row = {
+      id: newId(),
       title: String(title).trim(),
       summary: summary || '',
       content: content || '',
       image: imagePath,
-      publishedAt: parsePublishedAt(req.body)
-    });
-    res.status(201).json({ ok: true, data: mapNews(doc, true) });
+      publishedAt: parsePublishedAt(req.body),
+      createdAt: now,
+      updatedAt: now
+    };
+    await dbm.db.insert(news).values(row);
+    res.status(201).json({ ok: true, data: mapNews(row, true) });
   })
 );
 
@@ -151,7 +171,9 @@ admin.put(
   '/:id',
   uploadNewsImage.single('image'),
   asyncHandler(async function (req, res) {
-    const doc = await News.findById(req.params.id);
+    const { news } = dbm.schema;
+    const rows = await dbm.db.select().from(news).where(eq(news.id, req.params.id)).limit(1);
+    const doc = rows[0];
     if (!doc) return res.status(404).json({ ok: false, message: '文章不存在' });
 
     const errMsg = validateNewsFields(
@@ -165,15 +187,16 @@ admin.put(
       return res.status(400).json({ ok: false, message: errMsg });
     }
 
-    if (req.body.title) doc.title = String(req.body.title).trim();
-    if (req.body.summary !== undefined) doc.summary = req.body.summary;
-    if (req.body.content !== undefined) doc.content = req.body.content;
-    if (req.body.publishedAt) doc.publishedAt = parsePublishedAt(req.body);
-    if (req.file) doc.image = '/uploads/news/' + req.file.filename;
-    else if (req.body.image !== undefined) doc.image = req.body.image;
+    const patch = { updatedAt: nowMs() };
+    if (req.body.title) patch.title = String(req.body.title).trim();
+    if (req.body.summary !== undefined) patch.summary = req.body.summary;
+    if (req.body.content !== undefined) patch.content = req.body.content;
+    if (req.body.publishedAt) patch.publishedAt = parsePublishedAt(req.body);
+    if (req.file) patch.image = '/uploads/news/' + req.file.filename;
+    else if (req.body.image !== undefined) patch.image = req.body.image;
 
-    await doc.save();
-    res.json({ ok: true, data: mapNews(doc, true) });
+    await dbm.db.update(news).set(patch).where(eq(news.id, doc.id));
+    res.json({ ok: true, data: mapNews(Object.assign({}, doc, patch), true) });
   })
 );
 
@@ -181,8 +204,10 @@ admin.put(
 admin.delete(
   '/:id',
   asyncHandler(async function (req, res) {
-    const doc = await News.findByIdAndDelete(req.params.id);
-    if (!doc) return res.status(404).json({ ok: false, message: '文章不存在' });
+    const { news } = dbm.schema;
+    const rows = await dbm.db.select().from(news).where(eq(news.id, req.params.id)).limit(1);
+    if (!rows.length) return res.status(404).json({ ok: false, message: '文章不存在' });
+    await dbm.db.delete(news).where(eq(news.id, req.params.id));
     res.json({ ok: true, message: '已删除' });
   })
 );

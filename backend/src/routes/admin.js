@@ -1,7 +1,6 @@
 const express = require('express');
-const User = require('../models/User');
-const Work = require('../models/Work');
-const Comment = require('../models/Comment');
+const { eq, desc, and, gte, lt, sql } = require('drizzle-orm');
+const dbm = require('../db/client');
 const { requireAdmin } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const { formatDateTime } = require('../utils/url');
@@ -14,8 +13,16 @@ router.use(requireAdmin);
 router.get(
   '/dashboard',
   asyncHandler(async function (_req, res) {
-    const totalUsers = await User.countDocuments();
-    const totalWorks = await Work.countDocuments({ status: 'published' });
+    const { users, works } = dbm.schema;
+    const [userRows, workRows] = await Promise.all([
+      dbm.db.select({ n: sql`count(*)`.mapWith(Number) }).from(users),
+      dbm.db
+        .select({ n: sql`count(*)`.mapWith(Number) })
+        .from(works)
+        .where(eq(works.status, 'published'))
+    ]);
+    const totalUsers = userRows[0] ? userRows[0].n : 0;
+    const totalWorks = workRows[0] ? workRows[0].n : 0;
 
     const trend = [];
     const now = new Date();
@@ -27,27 +34,30 @@ router.get(
       const dayEnd = new Date(dayStart);
       dayEnd.setDate(dayEnd.getDate() + 1);
 
-      const count = await User.countDocuments({
-        createdAt: { $gte: dayStart, $lt: dayEnd }
-      });
+      const rows = await dbm.db
+        .select({ n: sql`count(*)`.mapWith(Number) })
+        .from(users)
+        .where(and(gte(users.createdAt, dayStart.getTime()), lt(users.createdAt, dayEnd.getTime())));
 
       trend.push({
         date: dayStart.toISOString().slice(0, 10),
-        count
+        count: rows[0] ? rows[0].n : 0
       });
     }
 
     const cumulative = [];
-    let running = 0;
     for (let j = 6; j >= 0; j--) {
       const d = new Date(now);
       d.setDate(d.getDate() - j);
       const end = new Date(d);
       end.setDate(end.getDate() + 1);
-      running = await User.countDocuments({ createdAt: { $lt: end } });
+      const rows = await dbm.db
+        .select({ n: sql`count(*)`.mapWith(Number) })
+        .from(users)
+        .where(lt(users.createdAt, end.getTime()));
       cumulative.push({
         date: d.toISOString().slice(0, 10),
-        total: running
+        total: rows[0] ? rows[0].n : 0
       });
     }
 
@@ -70,25 +80,38 @@ router.get(
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
+    const { comments, users, works } = dbm.schema;
 
-    const [items, total] = await Promise.all([
-      Comment.find()
-        .sort({ createdAt: -1 })
-        .skip(skip)
+    const [items, totalRows] = await Promise.all([
+      dbm.db
+        .select({
+          id: comments.id,
+          text: comments.text,
+          createdAt: comments.createdAt,
+          authorId: users.id,
+          authorName: users.nickname,
+          authorPhone: users.phone,
+          workId: works.id,
+          workTitle: works.title
+        })
+        .from(comments)
+        .leftJoin(users, eq(comments.userId, users.id))
+        .leftJoin(works, eq(comments.workId, works.id))
+        .orderBy(desc(comments.createdAt))
         .limit(limit)
-        .populate('userId', 'nickname phone handle')
-        .populate('workId', 'title'),
-      Comment.countDocuments()
+        .offset(skip),
+      dbm.db.select({ n: sql`count(*)`.mapWith(Number) }).from(comments)
     ]);
+    const total = totalRows[0] ? totalRows[0].n : 0;
 
     const list = items.map(function (c) {
       return {
-        id: c._id.toString(),
-        workId: c.workId ? c.workId._id.toString() : '',
-        workTitle: c.workId ? c.workId.title : '',
-        userId: c.userId ? c.userId._id.toString() : '',
-        userName: c.userId ? c.userId.nickname : '',
-        userPhone: c.userId ? c.userId.phone : '',
+        id: c.id,
+        workId: c.workId || '',
+        workTitle: c.workTitle || '',
+        userId: c.authorId || '',
+        userName: c.authorName || '',
+        userPhone: c.authorPhone || '',
         text: c.text,
         createdAt: formatDateTime(c.createdAt)
       };
@@ -105,8 +128,14 @@ router.get(
 router.delete(
   '/comments/:id',
   asyncHandler(async function (req, res) {
-    const doc = await Comment.findByIdAndDelete(req.params.id);
-    if (!doc) return res.status(404).json({ ok: false, message: '留言不存在' });
+    const { comments } = dbm.schema;
+    const rows = await dbm.db
+      .select()
+      .from(comments)
+      .where(eq(comments.id, req.params.id))
+      .limit(1);
+    if (!rows.length) return res.status(404).json({ ok: false, message: '留言不存在' });
+    await dbm.db.delete(comments).where(eq(comments.id, req.params.id));
     res.json({ ok: true, message: '已删除' });
   })
 );

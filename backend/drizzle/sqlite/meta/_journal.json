@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1794454252966,
+      "tag": "0000_careless_hydra",
+      "breakpoints": true
+    }
+  ]
+}

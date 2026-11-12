@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: forbid secrets and junk
+        run: |
+          tracked_env=$(git ls-files | grep -E '(^|/)\.env$' || true)
+          if [ -n "$tracked_env" ]; then echo "tracked .env files:"; echo "$tracked_env"; exit 1; fi
+          junk=$(git ls-files | grep -E '__MACOSX|\.DS_Store|\.command$' || true)
+          if [ -n "$junk" ]; then echo "junk files tracked:"; echo "$junk"; exit 1; fi
+          echo "guards pass"
+      - name: forbid oversized binaries
+        run: |
+          big=$(git ls-files -z | xargs -0 du -b | awk '$1 > 52428800 {print}' || true)
+          if [ -n "$big" ]; then echo "files over 50MB:"; echo "$big"; exit 1; fi
+          echo "size check pass"
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: node scripts/check-deps.js
+      - name: syntax check all js
+        run: |
+          fail=0
+          for f in $(git ls-files '*.js' '*.mjs'); do node --check "$f" || fail=1; done
+          exit $fail
+      - name: seed + boot + smoke (SQLite)
+        run: |
+          npm run seed
+          (node src/index.js &>/tmp/srv.log & echo $! > /tmp/srv.pid)
+          sleep 8
+          node scripts/smoke.js; code=$?
+          kill $(cat /tmp/srv.pid)
+          if [ "$code" != "0" ]; then cat /tmp/srv.log; fi
+          exit $code
+
+  backend-pg:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zhijiansu
+          POSTGRES_PASSWORD: ci_pass
+          POSTGRES_DB: mydb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://zhijiansu:ci_pass@localhost:5432/mydb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: seed + boot + smoke (PostgreSQL)
+        run: |
+          npm run seed
+          (node src/index.js &>/tmp/srv-pg.log & echo $! > /tmp/srv-pg.pid)
+          sleep 10
+          node scripts/smoke.js; code=$?
+          kill $(cat /tmp/srv-pg.pid)
+          if [ "$code" != "0" ]; then cat /tmp/srv-pg.log; fi
+          exit $code
+
+  backend-offline:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:1/nope
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: boot without DB + offline smoke (expect 503)
+        run: |
+          (node src/index.js &>/tmp/srv-off.log & echo $! > /tmp/srv-off.pid)
+          sleep 10
+          node scripts/smoke-offline.js; code=$?
+          kill $(cat /tmp/srv-off.pid)
+          if [ "$code" != "0" ]; then cat /tmp/srv-off.log; fi
+          exit $code
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node frontend/scripts/check-assets.js

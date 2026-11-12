@@ -1,6 +1,6 @@
 # 指间塑 — Node.js 后台 API
 
-基于 **Express + MongoDB**，为前端提供用户注册、新闻资讯、合作艺人、展厅作品、留言与管理员看板接口。
+基于 **Express + Drizzle ORM**（生产 PostgreSQL / 本地 SQLite），为前端提供用户注册、新闻资讯、合作艺人、展厅作品、留言与管理员看板接口。
 
 ## 服务器地址（统一）
 
@@ -30,7 +30,7 @@
 ## 环境要求
 
 - **Node.js v16.9.0 及以上**（推荐与服务器一致使用 16.9.x；可用 `nvm use` 切换，见 `.nvmrc`）
-- MongoDB（库名 `mydb`，用户 `mydb`）
+- 生产：PostgreSQL 16（`DATABASE_URL=postgres://USER:PASS@127.0.0.1:5432/mydb`）；本地：SQLite 零依赖（`DATABASE_URL=file:./dev.db`，默认）
 
 检查版本：
 
@@ -43,7 +43,7 @@ node -v   # 应 >= v16.9.0
 ```bash
 cd backend
 cp .env.example .env
-# 编辑 .env，填写 MONGODB_URI（密码含 @ 请写成 %40）
+# 编辑 .env，填写 DATABASE_URL（生产填 postgres 连接串，本地默认 file:./dev.db 即可）
 npm install
 npm run seed    # 可选：写入示例数据
 npm start       # 或 npm run dev
@@ -86,7 +86,7 @@ npm install --registry=https://registry.npmmirror.com
 
 ### 管理后台没有新闻 / 合作艺人？
 
-前端页面上的 **3 条新闻、3 位合作艺人** 原先写在 HTML / 本地 `db-seed.js` 里，**不会自动进 MongoDB**。
+前端页面上的 **3 条新闻、3 位合作艺人** 原先写在 HTML / 本地 `db-seed.js` 里，**不会自动进入数据库**。
 
 服务在 **成功连接数据库后** 会自动写入与前端一致的示例数据（见 `src/seedContent.js`）。也可手动执行：
 
@@ -249,12 +249,15 @@ Body 常用字段：`userId`、`title`、`tag`、`desc`、`publish`、`workType`
 
 ---
 
-## MongoDB 连接示例
+## 数据库连接示例
 
-`.env` 中（密码 `@Sq521521` 需编码为 `%40Sq521521`）：
+`.env` 中（二选一，密码含 `@` 需编码为 `%40`）：
 
 ```env
-MONGODB_URI=mongodb://mydb:%40Sq521521@127.0.0.1:27017/mydb?authSource=mydb
+# 本地开发（默认，可不填）
+DATABASE_URL=file:./dev.db
+# 生产 PostgreSQL
+# DATABASE_URL=postgres://mydb:YOUR_PASSWORD@127.0.0.1:5432/mydb
 PORT=3000
 JWT_SECRET=请改为随机长字符串
 PUBLIC_BASE_URL=http://8.160.184.132:3000
@@ -262,7 +265,7 @@ PUBLIC_BASE_URL=http://8.160.184.132:3000
 
 ## 上传文件
 
-图片、GLB 模型保存在 **`uploads/`** 目录（不在 Git 仓库内），MongoDB 只存路径如 `/uploads/models/xxx.glb`。
+图片、GLB 模型保存在 **`uploads/`** 目录（不在 Git 仓库内），数据库只存路径如 `/uploads/models/xxx.glb`。
 
 访问示例：`http://8.160.184.132:3000/uploads/news/xxx.jpg`
 
@@ -334,6 +337,6 @@ ZJS.USE_BACKEND = true;
 | 报错 | 处理 |
 |------|------|
 | `Cannot find module 'express'` | 在项目根目录执行 `npm install` |
-| `MongoServerError` / 连接失败 | 检查 `.env` 中 `MONGODB_URI`、MongoDB 是否启动 |
-| 密码含 `@` | 连接串里写成 `%40`，如 `mongodb://mydb:%40Sq521521@127.0.0.1:27017/mydb` |
+| 连接失败（`ECONNREFUSED` / 认证失败） | 生产检查 PostgreSQL 是否启动、`.env` 中 `DATABASE_URL` 是否正确；本地默认 SQLite 无需服务 |
+| 密码含 `@` | 连接串里写成 `%40` |
 | 重启后图片/模型缩略图 404 | 配置 `UPLOAD_DIR` 到项目外持久目录；更新代码勿删 uploads；见上文「上传文件」 |
