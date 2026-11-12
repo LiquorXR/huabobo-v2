@@ -77,6 +77,7 @@ app.use('/api/studio-models', studioModelsRoutes.publicRouter);
 app.use('/api/admin/studio-models', studioModelsRoutes.adminRouter);
 app.use('/api/studio-model-categories', studioModelCategoriesRoutes.publicRouter);
 app.use('/api/admin/studio-model-categories', studioModelCategoriesRoutes.adminRouter);
+app.use('/api/tts', require('./routes/tts'));
 
 app.use(function (_req, res) {
   res.status(404).json({ ok: false, message: '接口不存在' });

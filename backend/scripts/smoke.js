@@ -101,12 +101,18 @@ async function req(method, path, body, token) {
   r = await req('POST', '/api/admin/login', { username: 'admin', password: 'WRONG' });
   check('admin wrong pass 401', r.status === 401, r);
 
+  r = await req('POST', '/api/tts/speak', { text: '' });
+  check('tts empty text 400', r.status === 400, r);
+  if (!process.env.DOUBAO_TTS_API_KEY) {
+    r = await req('POST', '/api/tts/speak', { text: '你好' });
+    check('tts unconfigured 503', r.status === 503, r);
+  }
+
   const ADMIN_USER = process.env.SMOKE_ADMIN_USER || 'admin';
   const ADMIN_PASS = process.env.SMOKE_ADMIN_PASS || 'zhijiansu@admin';
   r = await req('POST', '/api/admin/login', { username: ADMIN_USER, password: ADMIN_PASS });
   check('admin login 200', r.status === 200 && !!r.data.token, r);
   const token = r.data.token;
-
   async function reqForm(method, path, fields, files) {
     const fd = new FormData();
     for (const k of Object.keys(fields || {})) fd.append(k, fields[k]);

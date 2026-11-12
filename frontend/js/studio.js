@@ -1772,6 +1772,7 @@ function setHumanActions(phase) {
 
 function stopHumanSpeech() {
   humanSpeakToken += 1;
+  stopHumanAudio();
   if (humanSpeakTimer) {
     clearTimeout(humanSpeakTimer);
     humanSpeakTimer = 0;
@@ -1839,6 +1840,148 @@ function speakChunk(chunk, index, total, onEnd, onFail) {
   window.speechSynthesis.speak(u);
 }
 
+/* 豆包 TTS（后端代理，音色锁死在服务端）：优先走后端，失败回退浏览器发音 */
+let humanAudio = null;
+let humanAudioResolve = null;
+
+function stopHumanAudio() {
+  if (humanAudio) {
+    try {
+      humanAudio.pause();
+    } catch (e) {}
+    humanAudio = null;
+  }
+  if (humanAudioResolve) {
+    const r = humanAudioResolve;
+    humanAudioResolve = null;
+    try {
+      r();
+    } catch (e) {}
+  }
+}
+
+function unlockTtsAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      const ctx = new AC();
+      if (ctx.state === 'suspended' && ctx.resume) ctx.resume().catch(function () {});
+      if (ctx.close) window.setTimeout(function () { try { ctx.close(); } catch (e) {} }, 3000);
+    }
+  } catch (e) {}
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', unlockTtsAudio);
+  document.addEventListener('keydown', unlockTtsAudio);
+}
+
+function fetchTtsAudio(text) {
+  const base = apiBase();
+  if (!base) return Promise.reject(new Error('no backend'));
+  let ctrl = null;
+  let timer = 0;
+  try {
+    if (typeof AbortController !== 'undefined') {
+      ctrl = new AbortController();
+      timer = window.setTimeout(function () {
+        try {
+          ctrl.abort();
+        } catch (e) {}
+      }, 12000);
+    }
+  } catch (e) {}
+  return fetch(base + '/api/tts/speak', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text }),
+    signal: ctrl ? ctrl.signal : undefined
+  }).then(
+    function (res) {
+      if (timer) window.clearTimeout(timer);
+      if (!res.ok) throw new Error('tts ' + res.status);
+      const ct = res.headers.get('content-type') || '';
+      if (ct.indexOf('audio/') !== 0) throw new Error('tts bad content');
+      return res.blob();
+    },
+    function (e) {
+      if (timer) window.clearTimeout(timer);
+      throw e;
+    }
+  ).then(function (blob) {
+    if (!blob || !blob.size) throw new Error('tts empty');
+    return blob;
+  });
+}
+
+function playTtsBlob(blob) {
+  return new Promise(function (resolve, reject) {
+    try {
+      stopHumanAudio();
+      const url = URL.createObjectURL(blob);
+      const a = new Audio(url);
+      const done = function (ok) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (e) {}
+        if (humanAudio === a) {
+          humanAudio = null;
+          humanAudioResolve = null;
+        }
+        if (ok) resolve();
+        else reject(new Error('audio play error'));
+      };
+      humanAudio = a;
+      humanAudioResolve = function () {
+        done(true);
+      };
+      a.onended = function () {
+        done(true);
+      };
+      a.onerror = function () {
+        done(false);
+      };
+      const pr = a.play();
+      if (pr && typeof pr.catch === 'function') {
+        pr.catch(function () {
+          done(false);
+        });
+      }
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function tryBackendChunk(chunk, token) {
+  return fetchTtsAudio(chunk).then(
+    function (blob) {
+      if (token !== humanSpeakToken) return false;
+      return playTtsBlob(blob).then(
+        function () {
+          return token === humanSpeakToken;
+        },
+        function () {
+          return false;
+        }
+      );
+    },
+    function () {
+      return false;
+    }
+  );
+}
+
+function speakChunkSmart(chunk, index, total, token, onEnd, onFail) {
+  tryBackendChunk(chunk, token).then(function (played) {
+    if (token !== humanSpeakToken) return;
+    if (played) {
+      onEnd();
+      return;
+    }
+    speakChunk(chunk, index, total, onEnd, onFail);
+  });
+}
+
 function speakHuman(text, onDone) {
   const token = ++humanSpeakToken;
   const chunks = toSpeakChunks(text);
@@ -1869,10 +2012,11 @@ function speakHuman(text, onDone) {
       const chunk = chunks[i];
       const idx = i;
       i += 1;
-      speakChunk(
+      speakChunkSmart(
         chunk,
         idx,
         chunks.length,
+        token,
         function () {
           if (token !== humanSpeakToken) return;
           const pause = chunk.length > 18 ? 420 : 260;
