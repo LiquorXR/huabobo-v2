@@ -1833,6 +1833,14 @@ function toSpeakChunks(text) {
   return parts.length ? parts : cleaned ? [cleaned] : [];
 }
 
+function toSpeakWhole(text) {
+  return String(text || '')
+    .replace(/「|」|“|”/g, '')
+    .replace(/\s*AI\s*/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
 function speakChunk(chunk, index, total, onEnd, onFail) {
   const u = new SpeechSynthesisUtterance(chunk);
   u.lang = (humanVoice && humanVoice.lang) || 'zh-CN';
@@ -2043,21 +2051,54 @@ async function fetchReviewText(context) {
 
 function speakHuman(text, onDone) {
   const token = ++humanSpeakToken;
-  const chunks = toSpeakChunks(text);
   function finish() {
     if (token !== humanSpeakToken) return;
-    humanSpeakTimer = 0;
+    if (humanSpeakTimer) {
+      try {
+        window.clearTimeout(humanSpeakTimer);
+      } catch (e) {}
+      humanSpeakTimer = 0;
+    }
     if (humanFigureEl) humanFigureEl.classList.remove('is-speaking');
     if (typeof onDone === 'function') onDone();
   }
-  if (!chunks.length) {
+  const whole = toSpeakWhole(text);
+  if (!whole.length) {
     finish();
     return;
   }
-  if (!window.speechSynthesis) {
-    humanSpeakTimer = window.setTimeout(finish, Math.min(24000, 1400 + String(text).length * 100));
-    return;
-  }
+  // 整段优先：一次合成、一次播放，语气不断句；失败再降级为逐段播放
+  fetchTtsAudio(whole).then(
+    function (blob) {
+      if (token !== humanSpeakToken) return;
+      humanSpeakTimer = window.setTimeout(
+        finish,
+        Math.min(120000, 15000 + whole.length * 500)
+      );
+      playTtsBlob(blob).then(
+        function () {
+          finish();
+        },
+        function () {
+          startChunked();
+        }
+      );
+    },
+    function () {
+      startChunked();
+    }
+  );
+  function startChunked() {
+    if (token !== humanSpeakToken) return;
+    const chunks = toSpeakChunks(text);
+    if (!chunks.length) {
+      finish();
+      return;
+    }
+    if (!window.speechSynthesis) {
+      humanSpeakTimer = window.setTimeout(finish, Math.min(24000, 1400 + String(text).length * 100));
+      return;
+    }
   try {
     window.speechSynthesis.cancel();
     ensureHumanVoice();
@@ -2102,6 +2143,7 @@ function speakHuman(text, onDone) {
     }
   } catch (e) {
     humanSpeakTimer = window.setTimeout(finish, 1600);
+  }
   }
 }
 

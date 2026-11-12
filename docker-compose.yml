@@ -35,6 +35,15 @@ services:
       DOUBAO_TTS_API_KEY: ${DOUBAO_TTS_API_KEY:-}
       DOUBAO_TTS_SPEAKER: ${DOUBAO_TTS_SPEAKER:-}
       DOUBAO_TTS_RESOURCE_ID: ${DOUBAO_TTS_RESOURCE_ID:-seed-tts-2.0}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
+      ZHIPU_BASE_URL: ${ZHIPU_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      ZHIPU_VISION_MODEL: ${ZHIPU_VISION_MODEL:-glm-5.3-flash}
+      ZHIPU_TEXT_MODEL: ${ZHIPU_TEXT_MODEL:-glm-5.3-flash}
+      ZHIPU_TTS_MODEL: ${ZHIPU_TTS_MODEL:-glm-tts}
+      ZHIPU_TTS_VOICE: ${ZHIPU_TTS_VOICE:-tongtong}
+      ZHIPU_TTS_SPEED: ${ZHIPU_TTS_SPEED:-1.0}
+      ZHIPU_TTS_VOLUME: ${ZHIPU_TTS_VOLUME:-1.0}
+      ZHIPU_REASONING_EFFORT: ${ZHIPU_REASONING_EFFORT:-low}
       ARK_API_KEY: ${ARK_API_KEY:-}
       ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       ARK_VISION_MODEL: ${ARK_VISION_MODEL:-}

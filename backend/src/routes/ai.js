@@ -3,7 +3,9 @@ const crypto = require('crypto');
 const asyncHandler = require('../utils/asyncHandler');
 
 /**
- * 数字人 AI 链路（火山方舟 Ark，OpenAI 兼容接口；密钥只在服务端）
+ * 数字人 AI 链路（OpenAI 兼容接口；密钥只在服务端）
+ * 优先级：ZHIPU_API_KEY（单 Key 通吃识图+文案+语音；视觉模型本身多模态，识图和点评可共用同一个）
+ * 兼容老配置：ARK_API_KEY + ARK_VISION_MODEL + ARK_TEXT_MODEL（火山方舟）
  * - POST /api/vision/identify  Body: { image: dataURL(jpeg/png) }
  *   → { ok:true, data:{ motif, craft, light } }（motif 为 8 个造型 id 之一）
  * - POST /api/review/text      Body: { context: { kind, motifs[], craft, light, extra? } }
@@ -28,13 +30,32 @@ setInterval(function () {
   });
 }, 60 * 1000).unref();
 
-function arkCfg() {
+function llmCfg() {
+  // 单 Key 优先：ZHIPU_API_KEY 一个 key 通吃识图+文案+语音
+  // 兼容老配置：ARK_*（火山方舟双 Key 方案）
+  if (process.env.ZHIPU_API_KEY) {
+    return {
+      provider: 'zhipu',
+      apiKey: process.env.ZHIPU_API_KEY || '',
+      baseUrl: (process.env.ZHIPU_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4').replace(/\/$/, ''),
+      visionModel: process.env.ZHIPU_VISION_MODEL || process.env.ARK_VISION_MODEL || 'glm-5.3-flash',
+      textModel: process.env.ZHIPU_TEXT_MODEL || process.env.ZHIPU_VISION_MODEL || process.env.ARK_TEXT_MODEL || 'glm-5.3-flash',
+      // glm-5.x 为强制思考的推理模型；low 档省 token 且经实测有效，老模型若报 400 会自动降级去掉该参数
+      reasoningEffort: process.env.ZHIPU_REASONING_EFFORT || 'low'
+    };
+  }
   return {
+    provider: 'ark',
     apiKey: process.env.ARK_API_KEY || '',
     baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, ''),
     visionModel: process.env.ARK_VISION_MODEL || '',
     textModel: process.env.ARK_TEXT_MODEL || ''
   };
+}
+
+// 保持旧函数名兼容（老代码/测试可能引用）
+function arkCfg() {
+  return llmCfg();
 }
 
 function throttle(req, res, tag) {
@@ -55,56 +76,90 @@ function extractJson(text) {
   return JSON.parse(body);
 }
 
-async function arkChat(cfg, model, messages, maxTokens, temperature) {
-  const controller = new AbortController();
-  const timer = setTimeout(function () {
-    controller.abort();
-  }, UPSTREAM_TIMEOUT_MS);
-  let res;
-  try {
-    res = await fetch(cfg.baseUrl + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + cfg.apiKey,
-        'X-Request-Id': crypto.randomUUID()
-      },
-      body: JSON.stringify({
+async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
+  const wantJson = !opts || opts.json !== false;
+  // 智谱/方舟均为 OpenAI 兼容；智谱部分视觉模型对 response_format 较严格，失败自动降级重试一次
+  // glm-5.x 推理模型另带 reasoning_effort 降思考档（low 经实测有效），老模型不支持会自动降级去掉
+  async function post(useJsonFormat, useReasoning) {
+    const controller = new AbortController();
+    const timer = setTimeout(function () {
+      controller.abort();
+    }, UPSTREAM_TIMEOUT_MS);
+    try {
+      const body = {
         model: model,
         messages: messages,
         max_tokens: maxTokens,
-        temperature: temperature,
-        response_format: { type: 'json_object' }
-      }),
-      signal: controller.signal
-    });
-  } catch (e) {
-    clearTimeout(timer);
-    const err = new Error('AI 服务连接失败');
-    err.status = 502;
-    throw err;
+        temperature: temperature
+      };
+      if (useJsonFormat) body.response_format = { type: 'json_object' };
+      if (useReasoning && cfg.provider === 'zhipu' && cfg.reasoningEffort) {
+        body.reasoning_effort = cfg.reasoningEffort;
+      }
+      const res = await fetch(cfg.baseUrl + '/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + cfg.apiKey,
+          'X-Request-Id': crypto.randomUUID()
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      const err = new Error('AI 服务连接失败');
+      err.status = 502;
+      throw err;
+    }
   }
-  clearTimeout(timer);
-  let data = null;
-  try {
-    data = await res.json();
-  } catch (e) {
-    const err = new Error('AI 服务返回异常');
-    err.status = 502;
-    throw err;
+  async function readContent(res) {
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      const err = new Error('AI 服务返回异常');
+      err.status = 502;
+      throw err;
+    }
+    if (!res.ok) {
+      const msg =
+        (data && (data.message || (data.error && (data.error.message || data.error)) || data.msg)) ||
+        ('HTTP ' + res.status);
+      const err = new Error(String(msg).slice(0, 200) || 'AI 服务异常');
+      err.status = 502;
+      err.upstreamStatus = res.status;
+      err.upstreamBody = data;
+      throw err;
+    }
+    const content =
+      data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content || typeof content !== 'string') {
+      const err = new Error('AI 服务无有效返回');
+      err.status = 502;
+      throw err;
+    }
+    return content;
   }
-  if (!res.ok) {
-    const err = new Error((data && (data.message || data.error)) || 'AI 服务异常');
-    err.status = 502;
-    throw err;
+
+  let res = await post(wantJson, true);
+  // 400 降级重试：response_format 或 reasoning_effort 不被模型支持时去掉对应参数再试一次
+  if (!res.ok && res.status === 400 && cfg.provider === 'zhipu') {
+    let peek = '';
+    try {
+      peek = await res.clone().text();
+    } catch (e) {
+      /* 忽略 peek 失败，走正常报错 */
+    }
+    const dropJson = wantJson && /response_format|json_object/i.test(peek);
+    const dropReasoning = /reasoning_effort|reasoning|thinking/i.test(peek);
+    if (dropJson || dropReasoning) {
+      res = await post(wantJson && !dropJson, !dropReasoning);
+    }
   }
-  const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-  if (!content || typeof content !== 'string') {
-    const err = new Error('AI 服务无有效返回');
-    err.status = 502;
-    throw err;
-  }
-  return content;
+  return readContent(res);
 }
 
 const VISION_SYSTEM = [
@@ -148,7 +203,7 @@ router.post(
           ]
         }
       ],
-      200,
+      600,
       0.1
     );
     let parsed;
@@ -213,8 +268,9 @@ router.post(
         { role: 'system', content: REVIEW_SYSTEM },
         { role: 'user', content: '点评对象信息（JSON）：' + JSON.stringify(facts) }
       ],
-      400,
-      0.7
+      1200,
+      0.7,
+      { json: false }
     );
     const text = String(content || '')
       .replace(/```[\s\S]*?```/g, '')
