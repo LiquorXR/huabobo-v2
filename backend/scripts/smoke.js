@@ -62,38 +62,48 @@ async function req(method, path, body, token) {
   r = await req('POST', '/api/users/register', { username, password: '123456', nickname: 'CI' });
   check('register 201', r.status === 201 && !!r.data.userId, r);
   const uid = r.data.userId;
+  check('register returns token', !!r.data.token, r.data && { hasToken: !!r.data.token });
 
   r = await req('POST', '/api/users/login', { username, password: '123456' });
   check('login 200', r.status === 200 && r.data.userId === uid, r);
+  const utoken = r.data.token;
+  check('login returns token', !!utoken, { hasToken: !!utoken });
+
+  r = await req('POST', '/api/works', { title: 'x' });
+  check('works no token 401', r.status === 401, r);
+  r = await req('POST', '/api/comments', { workId: 'x', text: 'y' });
+  check('comments no token 401', r.status === 401, r);
+  r = await req('POST', '/api/engagement/like', { workId: 'x', userId: uid });
+  check('like no token 401', r.status === 401, r);
+  r = await req('PATCH', '/api/users/' + uid + '/profile', { nickname: 'Hacker' });
+  check('profile no token 401', r.status === 401, r);
 
   r = await req('GET', '/api/users/' + uid);
   check('get user 200', r.status === 200 && r.data.data && r.data.data.nickname === 'CI', r.data);
 
-  r = await req('POST', '/api/works', { userId: 'nope', title: 'x' });
-  check('works bad userId 400', r.status === 400, r);
-
-  r = await req('POST', '/api/works', { userId: uid, title: 'CI作品', publish: true });
+  r = await req('POST', '/api/works', { userId: 'forged-id', title: 'CI作品', publish: true }, utoken);
   check('create work 201', r.status === 201 && !!(r.data.data && r.data.data.id), r);
   const wid = r.data.data && r.data.data.id;
 
   r = await req('GET', '/api/works?limit=5');
   check('works list 200', r.status === 200 && r.data.data && Array.isArray(r.data.data.list), r.data);
 
-  r = await req('GET', '/api/works/' + wid);
+  r = await req('GET', '/api/works/' + wid, undefined, utoken);
   check('get work 200', r.status === 200 && r.data.data && r.data.data.title === 'CI作品', r.data);
+  check('forged userId ignored, owner is token user', r.data.data && r.data.data.userId === uid, r.data.data);
 
   r = await req('GET', '/api/engagement?workIds=' + wid + '&viewerId=' + uid);
   check('engagement 200', r.status === 200 && !!(r.data.data && r.data.data[wid]), r.data);
 
-  r = await req('POST', '/api/comments', { workId: wid, userId: uid, text: 'CI好评' });
+  r = await req('POST', '/api/comments', { workId: wid, text: 'CI好评' }, utoken);
   check('comment 201', r.status === 201 && r.data.ok === true, r);
 
-  r = await req('POST', '/api/engagement/like', { workId: wid, userId: uid });
+  r = await req('POST', '/api/engagement/like', { workId: wid }, utoken);
   check('like true', r.status === 200 && r.data.liked === true, r);
-  r = await req('POST', '/api/engagement/like', { workId: wid, userId: uid });
+  r = await req('POST', '/api/engagement/like', { workId: wid }, utoken);
   check('like toggle false', r.status === 200 && r.data.liked === false, r);
 
-  r = await req('DELETE', '/api/works/' + wid + '?userId=' + uid);
+  r = await req('DELETE', '/api/works/' + wid, undefined, utoken);
   check('delete work 200', r.status === 200 && r.data.ok === true, r);
   r = await req('GET', '/api/works/' + wid);
   check('deleted work 404', r.status === 404, r);
@@ -113,7 +123,7 @@ async function req(method, path, body, token) {
   r = await req('POST', '/api/admin/login', { username: ADMIN_USER, password: ADMIN_PASS });
   check('admin login 200', r.status === 200 && !!r.data.token, r);
   const token = r.data.token;
-  async function reqForm(method, path, fields, files) {
+  async function reqForm(method, path, fields, files, tok) {
     const fd = new FormData();
     for (const k of Object.keys(fields || {})) fd.append(k, fields[k]);
     for (const k of Object.keys(files || {})) {
@@ -122,7 +132,7 @@ async function req(method, path, body, token) {
     }
     const res = await fetch(BASE + path, {
       method,
-      headers: { Authorization: 'Bearer ' + token },
+      headers: { Authorization: 'Bearer ' + (tok || token) },
       body: fd
     });
     let data = {};
@@ -143,10 +153,11 @@ async function req(method, path, body, token) {
   r = await req('GET', '/api/admin/dashboard', undefined, token);
   check('dashboard 200', r.status === 200 && r.data.data && typeof r.data.data.totalUsers === 'number', r.data);
 
-  r = await req('POST', '/api/admin/studio-model-categories', { name: 'CI分类' }, token);
+  const catName = 'CI分类' + String(Date.now()).slice(-6);
+  r = await req('POST', '/api/admin/studio-model-categories', { name: catName }, token);
   check('category create 201', r.status === 201 && !!(r.data.data && r.data.data.id), r);
   const cid = r.data.data && r.data.data.id;
-  r = await req('POST', '/api/admin/studio-model-categories', { name: 'CI分类' }, token);
+  r = await req('POST', '/api/admin/studio-model-categories', { name: catName }, token);
   check('category duplicate 400', r.status === 400, r);
 
   r = await reqForm('POST', '/api/admin/studio-models',
@@ -156,8 +167,30 @@ async function req(method, path, body, token) {
   const mid = r.data.data && r.data.data.id;
   check('model glb path', !!(r.data.data && r.data.data.glbUrl.indexOf('/uploads/models/') >= 0), r.data);
 
-  r = await req('POST', '/api/studio-models/' + mid + '/thumbnail', { thumbnailBase64: DATA_URL_PNG }, token);
-  check('model thumbnail 200', r.status === 200, r);
+  r = await req('POST', '/api/studio-models/' + mid + '/thumbnail', { thumbnailBase64: DATA_URL_PNG }, utoken);
+  check('model thumbnail 200 (user token)', r.status === 200, r);
+  r = await req('POST', '/api/studio-models/' + mid + '/thumbnail', { thumbnailBase64: DATA_URL_PNG });
+  check('model thumbnail no token 401', r.status === 401, r);
+
+  r = await req('PATCH', '/api/users/' + uid + '/profile', { nickname: 'CI2' }, utoken);
+  check('profile update own 200', r.status === 200 && r.data.data && r.data.data.nickname === 'CI2', r.data);
+
+  // 跨用户越权：注册第二个用户，用 B 的 token 操作 A 的资源
+  const usernameB = 'cb' + String(Date.now()).slice(-8);
+  r = await req('POST', '/api/users/register', { username: usernameB, password: '123456' });
+  check('register user B 201', r.status === 201, r);
+  const btoken = r.data.token;
+  const bid = r.data.userId;
+  r = await req('DELETE', '/api/works/' + wid, undefined, btoken);
+  check('cross-user delete work 404', r.status === 404, r);
+  r = await req('PATCH', '/api/users/' + uid + '/profile', { nickname: 'Hacked' }, btoken);
+  check('cross-user profile 403', r.status === 403, r);
+  r = await reqForm('POST', '/api/users/' + uid + '/avatar', {}, {
+    avatar: { data: PNG, type: 'image/png', filename: 'a.png' }
+  }, btoken);
+  check('cross-user avatar 403', r.status === 403, r);
+  r = await req('GET', '/api/users/' + uid, undefined, utoken);
+  check('nickname unchanged after attacks', r.status === 200 && r.data.data.nickname === 'CI2', r.data);
 
   r = await req('POST', '/api/admin/artisans', { name: 'CI艺人' }, token);
   check('artisan create 201', r.status === 201 && !!(r.data.data && r.data.data.id), r);
@@ -175,16 +208,16 @@ async function req(method, path, body, token) {
 
   r = await reqForm('POST', '/api/users/' + uid + '/avatar', {}, {
     avatar: { data: PNG, type: 'image/png', filename: 'a.png' }
-  });
+  }, utoken);
   check('avatar upload 200', r.status === 200, r);
 
   r = await reqForm('POST', '/api/works',
-    { userId: uid, title: 'CI封面作品', publish: '1', workType: 'model' },
-    { cover: { data: PNG, type: 'image/png', filename: 'cover.png' } });
+    { title: 'CI封面作品', publish: '1', workType: 'model' },
+    { cover: { data: PNG, type: 'image/png', filename: 'cover.png' } }, utoken);
   check('work cover upload 201', r.status === 201, r);
   const wid2 = r.data.data && r.data.data.id;
   check('work cover path', !!(r.data.data && r.data.data.image.indexOf('/uploads/') >= 0), r.data);
-  r = await req('DELETE', '/api/works/' + wid2 + '?userId=' + uid);
+  r = await req('DELETE', '/api/works/' + wid2, undefined, utoken);
   check('delete cover work 200', r.status === 200, r);
 
   r = await req('DELETE', '/api/admin/studio-models/' + mid, undefined, token);
@@ -197,6 +230,8 @@ async function req(method, path, body, token) {
   check('news delete 200', r.status === 200, r);
   r = await req('DELETE', '/api/admin/users/' + uid, undefined, token);
   check('cleanup CI user 200', r.status === 200, r);
+  r = await req('DELETE', '/api/admin/users/' + bid, undefined, token);
+  check('cleanup CI user B 200', r.status === 200, r);
   r = await req('POST', '/api/users/login', { username, password: '123456' });
   check('deleted user login 401', r.status === 401, r);
 

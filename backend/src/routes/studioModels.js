@@ -4,6 +4,7 @@ const dbm = require('../db/client');
 const { newId, nowMs } = require('../db/helpers');
 const { requireAdmin } = require('../middleware/auth');
 const requireDb = require('../middleware/requireDb');
+const { requireUser } = require('../middleware/userAuth');
 const { uploadStudioModelFiles } = require('../middleware/upload');
 const asyncHandler = require('../utils/asyncHandler');
 const { publicUrl, formatDateTime } = require('../utils/url');
@@ -99,6 +100,7 @@ router.get(
 router.post(
   '/:id/thumbnail',
   requireDb,
+  requireUser,
   asyncHandler(async function (req, res) {
     const { studioModels } = dbm.schema;
     const rows = await dbm.db

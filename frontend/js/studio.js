@@ -595,9 +595,14 @@ async function ensureLibraryThumbnails() {
         const base = window.ZJS && ZJS.API_BASE ? ZJS.API_BASE.replace(/\/$/, '') : '';
         if (!base || !entry.id) return;
         try {
+          const headers = { 'Content-Type': 'application/json' };
+          try {
+            const t = window.Api && Api.getAuthToken ? Api.getAuthToken() : (sessionStorage.getItem('zhijiansu_user_token') || '');
+            if (t) headers.Authorization = 'Bearer ' + t;
+          } catch (e) {}
           const res = await fetch(base + '/api/studio-models/' + encodeURIComponent(entry.id) + '/thumbnail', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ thumbnailBase64: dataUrl })
           }).then((r) => r.json());
           const saved = res && res.data && res.data.thumbnail;

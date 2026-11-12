@@ -7,6 +7,7 @@ const { formatDate } = require('../utils/url');
 const { persistWorkImage, normalizeWorkImage } = require('../utils/workImage');
 const { uploadWorkCover } = require('../middleware/upload');
 const requireDb = require('../middleware/requireDb');
+const { requireUser } = require('../middleware/userAuth');
 
 const router = express.Router();
 
@@ -24,7 +25,8 @@ function normalizeStoredImagePath(image) {
 async function saveWorkFromRequest(req) {
   const { works, users } = dbm.schema;
   const body = req.body || {};
-  const userId = String(body.userId || '').trim();
+  // 作者以登录 token 为准，忽略客户端传来的 userId（防 IDOR）
+  const userId = String(req.userId || '').trim();
   const title = String(body.title || '').trim();
   const id = body.id ? String(body.id).trim() : '';
   const publish = readBool(body.publish);
@@ -228,6 +230,7 @@ router.get(
 router.post(
   '/',
   requireDb,
+  requireUser,
   function (req, res, next) {
     var ct = String(req.headers['content-type'] || '');
     if (ct.indexOf('multipart/form-data') >= 0) {
@@ -253,8 +256,9 @@ router.post(
 router.delete(
   '/:id',
   requireDb,
+  requireUser,
   asyncHandler(async function (req, res) {
-    const userId = String(req.query.userId || (req.body && req.body.userId) || '').trim();
+    const userId = req.userId;
     if (!userId) {
       return res.status(400).json({ ok: false, message: '缺少 userId' });
     }

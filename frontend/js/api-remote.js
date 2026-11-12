@@ -25,6 +25,10 @@
   function http(path, options) {
     options = options || {};
     var headers = options.headers || {};
+    var token = getAuthToken();
+    if (token && !headers.Authorization) {
+      headers.Authorization = 'Bearer ' + token;
+    }
     if (options.json) {
       headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(options.json);
@@ -64,6 +68,24 @@
 
   var USER_CACHE_KEY = 'zhijiansu_user_profile';
   var USER_OVERRIDE_KEY = 'zhijiansu_user_overrides';
+  var TOKEN_KEY = 'zhijiansu_user_token';
+
+  function getAuthToken() {
+    try {
+      return sessionStorage.getItem(TOKEN_KEY) || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function setAuthToken(t) {
+    try {
+      if (t) sessionStorage.setItem(TOKEN_KEY, t);
+      else sessionStorage.removeItem(TOKEN_KEY);
+    } catch (e) {}
+  }
+
+  Api.getAuthToken = getAuthToken;
 
   function applyLocalProfileOverride(user) {
     if (!user) return user;
@@ -132,6 +154,7 @@
       if (res.ok && res.userId) {
         sessionStorage.setItem('zhijiansu_user_id', res.userId);
         if (res.user) cacheUser(res.user);
+        if (res.token) setAuthToken(res.token);
       }
       return { ok: res.ok, userId: res.userId, message: res.message };
     }).catch(function (e) {
@@ -147,6 +170,7 @@
       if (res.ok && res.userId) {
         sessionStorage.setItem('zhijiansu_user_id', res.userId);
         if (res.user) cacheUser(res.user);
+        if (res.token) setAuthToken(res.token);
       }
       return { ok: res.ok, userId: res.userId, message: res.message };
     }).catch(function (e) {
@@ -176,7 +200,20 @@
   };
 
   Api.isLoggedIn = function () {
-    return !!sessionStorage.getItem('zhijiansu_user_id');
+    return !!getAuthToken();
+  };
+
+  var localLogout = Api.logout;
+  Api.logout = function () {
+    setAuthToken(null);
+    try {
+      sessionStorage.removeItem('zhijiansu_user_profile');
+    } catch (e) {}
+    if (typeof localLogout === 'function') return localLogout();
+    try {
+      sessionStorage.removeItem('zhijiansu_user_id');
+    } catch (e) {}
+    return Promise.resolve({ ok: true });
   };
 
   var localUpdateUserNickname = Api.updateUserNickname;
@@ -218,6 +255,13 @@
       });
   };
 
+  function authHeaders(extra) {
+    var h = extra || {};
+    var token = getAuthToken();
+    if (token && !h.Authorization) h.Authorization = 'Bearer ' + token;
+    return h;
+  }
+
   Api.uploadUserAvatar = function (userId, file) {
     if (!userId || !file) {
       return Promise.resolve({ ok: false, message: '参数错误' });
@@ -226,6 +270,7 @@
     fd.append('avatar', file);
     return fetch(BASE + '/api/users/' + encodeURIComponent(userId) + '/avatar', {
       method: 'POST',
+      headers: authHeaders(),
       body: fd
     })
       .then(function (res) {
@@ -332,7 +377,7 @@
         if (payload.id) fd.append('id', payload.id);
         fd.append('cover', file, filename);
         fd.append('image', image);
-        return fetch(BASE + '/api/works', { method: 'POST', body: fd })
+        return fetch(BASE + '/api/works', { method: 'POST', headers: authHeaders(), body: fd })
           .then(function (res) {
             return res.text().then(function (text) {
               var data;

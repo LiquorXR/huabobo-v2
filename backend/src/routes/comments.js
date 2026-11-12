@@ -3,6 +3,7 @@ const { eq, desc } = require('drizzle-orm');
 const dbm = require('../db/client');
 const { newId, nowMs } = require('../db/helpers');
 const requireDb = require('../middleware/requireDb');
+const { requireUser } = require('../middleware/userAuth');
 const asyncHandler = require('../utils/asyncHandler');
 const { formatDateTime } = require('../utils/url');
 
@@ -53,8 +54,10 @@ router.get(
 router.post(
   '/',
   requireDb,
+  requireUser,
   asyncHandler(async function (req, res) {
-    const { workId, userId, text } = req.body || {};
+    const { workId, text } = req.body || {};
+    const userId = req.userId;
     const content = (text || '').trim();
     if (!workId || !userId || !content) {
       return res.status(400).json({ ok: false, message: '参数不完整' });

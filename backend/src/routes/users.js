@@ -1,15 +1,24 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const config = require('../config');
 const { eq, and, desc, sql } = require('drizzle-orm');
 const dbm = require('../db/client');
 const { newId, nowMs } = require('../db/helpers');
 const { requireAdmin } = require('../middleware/auth');
+const { requireUser } = require('../middleware/userAuth');
 const requireDb = require('../middleware/requireDb');
 const asyncHandler = require('../utils/asyncHandler');
 const { formatDateTime, publicUrl } = require('../utils/url');
 const { uploadUserAvatar } = require('../middleware/upload');
 
 const router = express.Router();
+
+function signUserToken(userId) {
+  return jwt.sign({ type: 'user', sub: userId }, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn
+  });
+}
 
 function mapUser(u) {
   if (!u) return null;
@@ -73,7 +82,7 @@ router.post(
     };
     await dbm.db.insert(users).values(row);
 
-    res.status(201).json({ ok: true, userId: row.id, user: mapUser(row) });
+    res.status(201).json({ ok: true, userId: row.id, user: mapUser(row), token: signUserToken(row.id) });
   })
 );
 
@@ -100,7 +109,7 @@ router.post(
     if (!match) {
       return res.status(401).json({ ok: false, message: '账号或密码错误' });
     }
-    res.json({ ok: true, userId: user.id, user: mapUser(user) });
+    res.json({ ok: true, userId: user.id, user: mapUser(user), token: signUserToken(user.id) });
   })
 );
 
@@ -108,7 +117,11 @@ router.post(
 router.post(
   '/:id/avatar',
   requireDb,
+  requireUser,
   function (req, res, next) {
+    if (req.params.id !== req.userId) {
+      return res.status(403).json({ ok: false, message: '无权操作' });
+    }
     uploadUserAvatar.single('avatar')(req, res, function (err) {
       if (err) {
         return res.status(400).json({ ok: false, message: err.message || '上传失败' });
@@ -133,8 +146,11 @@ router.post(
   })
 );
 
-/** PATCH/POST /api/users/:id/profile — 修改昵称 */
+/** PATCH/POST /api/users/:id/profile — 修改昵称（仅本人） */
 async function updateUserProfile(req, res) {
+  if (req.params.id !== req.userId) {
+    return res.status(403).json({ ok: false, message: '无权操作' });
+  }
   const { nickname } = req.body || {};
   const nick = String(nickname || '').trim();
   if (!nick) {
@@ -154,8 +170,8 @@ async function updateUserProfile(req, res) {
   res.json({ ok: true, data: mapUser(Object.assign({}, user, { nickname: nick, handle: '@' + nick })) });
 }
 
-router.patch('/:id/profile', requireDb, asyncHandler(updateUserProfile));
-router.post('/:id/profile', requireDb, asyncHandler(updateUserProfile));
+router.patch('/:id/profile', requireDb, requireUser, asyncHandler(updateUserProfile));
+router.post('/:id/profile', requireDb, requireUser, asyncHandler(updateUserProfile));
 
 /** GET /api/users/:id — 用户公开资料（供个人主页） */
 router.get(
