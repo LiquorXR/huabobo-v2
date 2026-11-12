@@ -11,6 +11,10 @@ const { newId, nowMs } = require('./db/helpers');
 const { ensureSeedContent } = require('./seedContent');
 
 async function seed() {
+  if (process.env.NODE_ENV === 'production' && !process.argv.includes('--force')) {
+    console.error('生产环境拒绝直接 seed（含 demo/123456 弱账号），如确需执行请加 --force');
+    process.exit(1);
+  }
   await connectDb();
   const { users, works } = dbm.schema;
 

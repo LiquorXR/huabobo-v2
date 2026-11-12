@@ -14,11 +14,19 @@ function ensureDir(dir) {
 }
 
 function isImageUpload(file) {
-  var mime = String((file && file.mimetype) || '').toLowerCase();
   var name = String((file && file.originalname) || '').toLowerCase();
-  if (mime.indexOf('image/') === 0) return true;
-  if (/\.(png|jpe?g|webp|gif)$/i.test(name)) return true;
-  return false;
+  // 扩展名白名单优先：svg 等可执行载体一律拒绝（防存储型 XSS）
+  if (!/\.(png|jpe?g|webp|gif)$/i.test(name)) return false;
+  var mime = String((file && file.mimetype) || '').toLowerCase();
+  // 允许 mime 缺失/通用二进制（部分客户端行为），但明确拒绝 svg
+  if (!mime || mime === 'application/octet-stream') return true;
+  if (mime.indexOf('svg') >= 0) return false;
+  return mime.indexOf('image/') === 0;
+}
+
+function imageFilter(_req, file, cb) {
+  if (isImageUpload(file)) return cb(null, true);
+  return cb(new Error('仅支持图片文件（png/jpg/webp/gif）'));
 }
 
 function createUploader(subdir) {
@@ -68,12 +76,7 @@ const uploadAboutStorage = multer.diskStorage({
 
 const uploadAboutFiles = multer({
   storage: uploadAboutStorage,
-  fileFilter: function (_req, file, cb) {
-    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
-      return cb(new Error('仅支持图片文件'));
-    }
-    cb(null, true);
-  },
+  fileFilter: imageFilter,
   limits: { fileSize: 8 * 1024 * 1024 }
 }).fields([
   { name: 'introImage', maxCount: 1 },
@@ -141,12 +144,7 @@ const uploadArtisanStorage = multer.diskStorage({
 
 const uploadArtisanFiles = multer({
   storage: uploadArtisanStorage,
-  fileFilter: function (_req, file, cb) {
-    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
-      return cb(new Error('仅支持图片文件'));
-    }
-    cb(null, true);
-  },
+  fileFilter: imageFilter,
   limits: { fileSize: 8 * 1024 * 1024 }
 }).fields([
   { name: 'image', maxCount: 1 },

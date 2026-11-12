@@ -22,9 +22,30 @@ const studioModelCategoriesRoutes = require('./routes/studioModelCategories');
 
 const app = express();
 
+/* 最小安全头（CSP 暂用 Report-Only，见 web/Caddyfile 注释） */
+app.use(function (_req, res, next) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+  next();
+});
+
+/* CORS 白名单：同源（无 Origin 头）与 file://（null）放行，其余只认配置的前后端地址 */
+var corsAllowList = [
+  config.publicBaseUrl,
+  config.frontendBaseUrl,
+  'http://127.0.0.1:3000',
+  'http://localhost:3000',
+  'http://127.0.0.1:8765',
+  'http://localhost:8765'
+];
 app.use(
   cors({
-    origin: true,
+    origin: function (origin, cb) {
+      if (!origin || origin === 'null') return cb(null, true);
+      if (corsAllowList.indexOf(String(origin).replace(/\/$/, '')) >= 0) return cb(null, true);
+      return cb(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']

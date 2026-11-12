@@ -3,6 +3,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+/** 无 JWT 密钥直接拒绝启动：默认密钥全网公开，可伪造任意管理员 token */
+if (!process.env.JWT_SECRET) {
+  console.error('');
+  console.error('【启动失败】未设置 JWT_SECRET，继续运行将使用公开的默认密钥（可伪造任意 token）。');
+  console.error('请在 .env（本地）或环境变量（生产）中设置随机长字符串后再启动。');
+  console.error('');
+  process.exit(1);
+}
+
 /** 管理员账号固定写在程序内（也可用环境变量覆盖） */
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'zhijiansu@admin';

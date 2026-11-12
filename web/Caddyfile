@@ -1,6 +1,11 @@
 # Caddy 边缘：自动 HTTPS + 静态托管 frontend/ + 反代后端
 # {$DOMAIN} 由 docker-compose 的环境变量传入
 {$DOMAIN} {
+	# HSTS：只在 HTTPS 生效；子域名未全站 HTTPS 前不要加 includeSubDomains
+	header Strict-Transport-Security "max-age=31536000"
+	# CSP 当前为 Report-Only（只告警不拦截）：站内有内联脚本，script/style 暂保留 unsafe-inline；
+	# 待前端内联脚本清理完毕后再收紧并切强制模式
+	header Content-Security-Policy-Report-Only "default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https:; frame-ancestors 'self'"
 	# 前端静态站
 	root * /srv
 	# 后台 API（含管理后台页面与上传文件直链）
