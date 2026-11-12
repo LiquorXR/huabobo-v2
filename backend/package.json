@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "dev": "node scripts/check-deps.js && node src/index.js",
     "seed": "node src/seed.js",
+    "import:models": "node scripts/import-models.js",
     "db:generate": "drizzle-kit generate --config=drizzle.pg.config.js && drizzle-kit generate --config=drizzle.sqlite.config.js",
     "build:admin-thumb": "node_modules/esbuild/bin/esbuild scripts/admin-thumb-entry.mjs --bundle --format=iife --global-name=AdminModelThumbBundle --outfile=public/admin/vendor/admin-thumb.bundle.js --platform=browser --target=es2018",
     "postinstall": "node -e \"console.log('[ok] 依赖安装完成，可执行 npm start')\""

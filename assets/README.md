@@ -1,23 +1,26 @@
 # assets
 
-`model-library/` is NOT tracked by git (see root `.gitignore`).
-It holds large seed/display models (`v1/`, `v2/`, loose `.glb/.obj`,
-moved from the old `模型库/uploads/`), meant to be uploaded manually
-after deploy — e.g. via admin console, `scp`, or object storage —
-instead of being cloned with the repo.
+`model-library/` 是大模型文件的本地中转目录（git 不入库，见根 `.gitignore`），
+放的是从旧 `模型库/uploads/` 搬过来的种子文件（`v1/`、`v2/`、散装 `.glb/.obj`，
+中文原名保留）。
 
-Local working-tree copy is kept for the current machine only.
+## 把模型库导入工作台（导入后前端即可见）
 
-## Manual upload after deploy
+前端模型库是数据库驱动的（`/api/studio-models`），光把文件放在这里不会显示。
+用自带脚本一次性导入：
 
-1. Get the model files out-of-band (archive / shared drive / storage bucket).
-2. Place them on the server, either:
-   - runtime dir: `backend/uploads/` (or the external dir pointed to by
-     `UPLOAD_DIR` in `backend/.env`), or
-   - this folder: `assets/model-library/` then copy/sync needed files
-     into the runtime uploads dir.
-3. Original Chinese `.glb/.obj` basenames are kept as-is; only the
-   directory names were normalized to English (`1版/` → `v1/`,
-   `2版/` → `v2/`).
+```bash
+cd backend
+npm run import:models                        # 导入 ../assets/model-library，全进「模型库」分类
+npm run import:models -- --category=天空元素  # 导入到指定分类（不存在会自动创建）
+```
+
+脚本会：复制 `.glb` 到上传目录、同名自动跳过（可重复执行）、
+非 GLB（如 `.obj`，播放器不支持）列出并跳过、缺失分类自动创建。
+缩略图在工作台首次打开该模型时自动生成补齐。
+
+生产环境同样适用：把 `assets/model-library/` 传到服务器后执行
+`docker compose exec backend npm run import:models -- /path/to/model-library`，
+或在管理后台逐个上传。
 
 Never `git add` this directory back in.
