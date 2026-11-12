@@ -18,13 +18,13 @@
 
 下文接口均以 **`http://8.160.184.132:3000`** 为根地址；路径栏也可只写 `/api/...`，自行拼接。
 
-> 若 Nginx 将 API 反代到 80 端口（无 `:3000`），请把文档与配置中的 `http://8.160.184.132:3000` 改为 `http://8.160.184.132`，并同步 `.env` 的 `PUBLIC_BASE_URL` 与frontend `js/api-config.js`。
+> 生产统一走 Docker + Caddy（同源 `/api`，无端口概念），本节的 IP:端口写法仅用于本地直连调试；`PUBLIC_BASE_URL` 由 compose 的 `DOMAIN` 自动生成。
 
 ### 绑定域名（HTTPS）必做
 
-1. **手势 / 摄像头**：浏览器只允许在 **HTTPS**（或 `http://127.0.0.1`）下使用摄像头。用 `http://域名` 打开会误提示「python3 -m http.server」——应改为 **SSL + https://域名**。
-2. **展厅点赞 / 留言**：HTTPS 页面不能直连 `http://8.160.184.132:3000`（Mixed Content）。须在 Nginx 把 **`/api`、`/uploads`** 反代到本机 `127.0.0.1:3000`。示例见项目根目录 **`部署/nginx-域名与API反代.conf`**。
-3. 上传最新 **`frontend/js/api-config.js`**、**`api-remote.js`**、**`work-engage.js`** 及后台 **`src/routes/engagement.js`** 后重启 Node。
+1. **手势 / 摄像头**：浏览器只允许在 **HTTPS**（或 `http://127.0.0.1`）下使用摄像头。生产 Caddy 自动签发证书，直接用 `https://域名` 访问即可。
+2. **展厅点赞 / 留言**：HTTPS 页面不能直连 `http://IP:3000`（Mixed Content）。生产由 Caddy 把 **`/api`、`/uploads`、`/admin`** 反代到 `backend:3000`（见仓根 `docker-compose.yml` + `web/Caddyfile`），前端同源请求，无需手工配 Nginx。
+3. 前端 `frontend/js/api-config.js` 已按同源解析（域名下请求 `location.origin`），无需上传零散文件。
 4. 浏览器访问 `https://你的域名/api/health` 应返回 `{"ok":true,...}`。
 
 ## 环境要求
@@ -49,40 +49,27 @@ npm run seed    # 可选：写入示例数据
 npm start       # 或 npm run dev
 ```
 
-## 服务器部署（宝塔 / /www/wwwroot/nodejs）
+## 服务器部署（Docker，生产唯一方式）
 
-出现 `Cannot find module 'express'` 表示 **未安装依赖**，不是代码错误。
-
-1. 将整个项目上传到服务器，目录需包含：
-   - `package.json`
-   - `src/`
-   - `public/`
-   - `.env`（可从 `.env.example` 复制）
-   - **不要只上传 `src` 文件夹**
-
-2. SSH 进入项目根目录后执行：
+不再使用宝塔面板。生产统一走仓根 `docker-compose.yml`（Caddy 自动 HTTPS + Node 后端 + PostgreSQL）：
 
 ```bash
-cd /www/wwwroot/nodejs
-node -v          # 确认 >= v22（旧 16.x 跑新版会直接段错误，先 nvm 升级）
-npm install      # 必须执行，会生成 node_modules
-npm start
+cp .env.example .env   # 填写 DOMAIN / POSTGRES_PASSWORD / JWT_SECRET
+docker compose up -d --build
+curl https://你的域名/api/health   # {"ok":true,"db":"connected"}
 ```
 
-3. 宝塔「Node 项目」配置建议：
-   - **项目路径**：`/www/wwwroot/nodejs`（有 `package.json` 的那一层）
-   - **启动文件**：`src/index.js` 或启动命令填 `npm start`
-   - **先**在终端对该目录执行一次 `npm install`
+说明：
 
-4. 若 `npm install` 很慢，可试国内镜像：
+- 首次启动自动执行 drizzle 迁移并写入示例数据（新闻/艺人/分类/关于页），无需手动 `npm run seed`。
+- 上传文件落 `uploads-data` 卷，更新镜像不丢失；数据库在 `pgdata` 卷。
+- 日常更新：`git pull && docker compose up -d --build`。
+- 查看日志：`docker compose logs -f backend`；进库检查：`docker compose exec postgres psql -U mydb -d mydb`。
+- 备份：`docker compose exec postgres pg_dump -U mydb mydb > dump.sql` + 卷备份 `uploads-data`（见运维手册）。
 
-```bash
-npm install --registry=https://registry.npmmirror.com
-```
+服务地址：`https://你的域名`（前台）与 `https://你的域名/admin/`（管理后台）。
 
-服务地址：`http://8.160.184.132:3000`
-
-**管理后台**：http://8.160.184.132:3000/admin/
+若管理后台图片不显示，检查 `.env` 中 `DOMAIN` 是否为当前域名（`PUBLIC_BASE_URL` 由此拼接）。
 
 ### 管理后台没有新闻 / 合作艺人？
 
@@ -91,27 +78,20 @@ npm install --registry=https://registry.npmmirror.com
 服务在 **成功连接数据库后** 会自动写入与前端一致的示例数据（见 `src/seedContent.js`）。也可手动执行：
 
 ```bash
-cd /www/wwwroot/nodejs   # 你的后台项目目录
+cd backend   # 后台项目目录（本地开发；Docker 部署会自动播种，无需手动执行）
 npm run seed
 ```
 
-然后 **重启 Node 项目**，刷新管理后台即可看到 3 条新闻、3 位艺人。
-
-若管理后台图片不显示，在 `.env` 中设置前端站点地址（静态页所在域名）：
-
-```env
-FRONTEND_BASE_URL=http://8.160.184.132
-```
+然后 **重启 backend 容器**（`docker compose restart backend`），刷新管理后台即可看到 3 条新闻、3 位艺人。
 
 ### 登录出现「Failed to fetch」时
 
-1. 浏览器先打开：http://8.160.184.132:3000/api/health  
+1. 服务器上执行 `curl http://127.0.0.1:3000/api/health`（进 backend 容器网络前先确认服务本身）或 `docker compose ps` 看三容器是否都 Up；  
    - 能返回 `{"ok":true,...}` → 后台已启动，再试管理页登录。  
-   - 打不开 → 在服务器项目目录执行 `npm start`，并在云安全组/宝塔防火墙 **放行 3000 端口**。
-2. 管理页请用 **带 3000 端口** 的地址打开：`http://8.160.184.132:3000/admin/`  
-   不要用 `http://8.160.184.132/admin/`（80 端口）除非已配置 Nginx 反代到 3000。
-3. 管理页登录区展开「无法登录？检查 API 地址」，确认 API 为 `http://8.160.184.132:3000`。
-4. 更新代码后需重新上传 `public/admin/` 与 `src/index.js`，并在宝塔 Node 项目中 **重启** 服务。
+   - 打不开 → `docker compose logs backend` 看报错（常见是 `DATABASE_URL` 配错或 postgres 未 healthy）。
+2. 管理页请用 **HTTPS 域名** 打开：`https://你的域名/admin/`，确认浏览器地址栏是锁形图标（摄像头/上传要求 HTTPS）。
+3. 管理页登录区展开「无法登录？检查 API 地址」，确认 API 为同源（`https://你的域名`，由前端 `api-config.js` 自动解析，无需手填 IP:端口）。
+4. 更新代码后执行 `git pull && docker compose up -d --build` 即可，无需手动传文件、手动重启。
 
 ## 管理员账号（写在程序内）
 

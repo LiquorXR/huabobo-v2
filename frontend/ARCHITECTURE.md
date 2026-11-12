@@ -22,10 +22,10 @@
 
 ## 数据层与 API 地址
 
-- **服务器：** `8.160.184.132`
-- **后台 API：** `http://8.160.184.132:3000`（见 `frontend/frontend/js/api-config.js` 中 `ZJS.API_BASE`）
-- **前端静态页：** `http://8.160.184.132`（与 API 同机部署时）
-- `frontend/frontend/js/api-config.js` — 开启 `ZJS.USE_BACKEND`，默认请求 `http://8.160.184.132:3000`
+- **生产：** `https://你的域名`（Caddy 自动 HTTPS，见仓根 `docker-compose.yml` + `web/Caddyfile`）
+- **后台 API：** 同源 `/api`（Caddy 反代到 `backend:3000`，见 `frontend/js/api-config.js` 中 `ZJS.API_BASE` 的同源解析）
+- **前端静态页：** Caddy 直接托管 `frontend/` 目录
+- `frontend/js/api-config.js` — `ZJS.USE_BACKEND` 常开；域名下请求同源 `/api`，本地 `127.0.0.1` 调试时直连线上 API
 - `js/api-remote.js` — 覆盖 `Api.*` 对接真实接口
 - `js/api.js` — 本地演示兜底（未连后台时）
 - 完整接口列表见：`backend/README.md`

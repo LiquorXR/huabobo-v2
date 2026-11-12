@@ -71,13 +71,13 @@
         '<div class="local-http-help local-http-help--https">' +
         '<p class="local-http-help-title">当前通过 <strong>HTTP</strong> 打开网站，Chrome 等浏览器<strong>不允许使用摄像头</strong>，手势识别无法启动。</p>' +
         '<ol class="local-http-help-steps">' +
-        '<li>在服务器（宝塔）为站点 <code>' +
+        '<li>在服务器上为站点 <code>' +
         host +
-        '</code> 申请并开启 <strong>SSL（HTTPS）</strong></li>' +
+        '</code> 开启 <strong>SSL（HTTPS）</strong>（生产用仓根 docker compose，一键自动配证书）</li>' +
         '<li>用 <code>https://' +
         host +
         '/</code> 访问本站（不要用 http://）</li>' +
-        '<li>若使用 HTTPS，须将 <code>/api</code>、<code>/uploads</code> 反代到 <code>127.0.0.1:3000</code>（见项目 <code>部署/nginx-域名与API反代.conf</code>）</li>' +
+        '<li>若使用 HTTPS，须将 <code>/api</code>、<code>/uploads</code> 反代到后端 <code>127.0.0.1:3000</code>（生产 docker compose 已配好 Caddy 反代）</li>' +
         '</ol>' +
         '<p class="local-http-help-note">展厅点赞、留言同样依赖后台接口；HTTPS 下未配置反代时也会失败。</p>' +
         '</div>';

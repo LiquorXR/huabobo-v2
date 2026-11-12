@@ -21,6 +21,8 @@ jobs:
           big=$(git ls-files -z | xargs -0 du -b | awk '$1 > 52428800 {print}' || true)
           if [ -n "$big" ]; then echo "files over 50MB:"; echo "$big"; exit 1; fi
           echo "size check pass"
+      - name: validate compose
+        run: docker compose config -q && echo "compose ok"
 
   backend:
     runs-on: ubuntu-latest

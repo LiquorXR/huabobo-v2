@@ -1,0 +1,20 @@
+# Caddy 边缘：自动 HTTPS + 静态托管 frontend/ + 反代后端
+# {$DOMAIN} 由 docker-compose 的环境变量传入
+{$DOMAIN} {
+	# 前端静态站
+	root * /srv
+	# 后台 API（含管理后台页面与上传文件直链）
+	handle /api/* {
+		reverse_proxy backend:3000
+	}
+	handle /uploads/* {
+		reverse_proxy backend:3000
+	}
+	handle /admin/* {
+		reverse_proxy backend:3000
+	}
+	# 其余走静态文件
+	handle {
+		file_server
+	}
+}

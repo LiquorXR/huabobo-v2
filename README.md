@@ -4,38 +4,49 @@ Standard layout (no Chinese directory names):
 
 ```
 huabobo-v2/
-  backend/          # Express + Mongo API (was 后台代码)
-    src/            # index.js, config.js, db.js, routes/, models/, middleware/, utils/
+  backend/          # Express + Drizzle (PG prod / SQLite local)
+    src/            # index.js, config.js, db/, routes/, middleware/, utils/
     public/admin/   # admin console (vendor/ = three.js + built thumb bundle)
-    scripts/        # check-deps.js, build-admin-thumb.mjs, admin-thumb-entry.mjs
+    scripts/        # check-deps.js, smoke.js, mongo-to-sql.js, ...
     uploads/        # runtime uploads (gitignored, only .gitkeep tracked)
-    start.sh / start.bat        # replaces 启动服务.command
-    start-macos.sh              # original macOS starter (reference)
+    drizzle/        # committed PG + SQLite migrations
+    start.sh / start.bat
     install.sh / package.json / .nvmrc / .env.example
   frontend/         # MPA static site (was 前端)
     *.html css/ js/ images/ models/ scripts/
-    start.sh / start.bat        # python http.server :8765 (replaces 本地服务.command)
-    start-macos.sh              # original macOS starter (reference)
+    start.sh / start.bat        # python http.server :8765
     ARCHITECTURE.md
+  web/Caddyfile     # edge: auto HTTPS + static + /api reverse proxy
+  docker-compose.yml  # 生产：web + backend + postgres:16
   assets/           # NOT in git: manual model drop (see assets/README.md)
     model-library/  # gitignored; upload manually after deploy (v1/, v2/, *.glb/*.obj)
-  scripts/          # (reserved for repo-level helpers)
 ```
 
 ## Quick start (new machine)
 
 ```bash
-# backend
+# backend（本地默认 SQLite，零配置）
 cd backend
-cp .env.example .env   # fill MONGODB_URI, JWT_SECRET, etc.
-npm install
-npm start              # or ./start.sh (Windows: start.bat)
+cp .env.example .env   # 默认 DATABASE_URL=file:./dev.db，一般不用改
+npm install              # 需要 Node >= 22
+npm run seed             # 可选：写入示例数据
+npm start              # 或 ./start.sh（Windows: start.bat）
 
 # frontend (another terminal)
 cd frontend
 ./start.sh             # Windows: start.bat
 # open http://127.0.0.1:8765/digital.html
 ```
+
+## Production（Docker，不再需要宝塔）
+
+```bash
+cp .env.example .env   # 填写 DOMAIN / POSTGRES_PASSWORD / JWT_SECRET
+docker compose up -d --build
+curl https://你的域名/api/health
+```
+
+详见 `backend/README.md`「服务器部署」一节。VPS 只需 Docker + 80/443/DNS，无需宝塔、Nginx 手工配置、Node 常驻进程。
 
 Notes:
 - Old `__MACOSX/`, all `.DS_Store`, and `backend/node_modules/` were removed.

@@ -26,12 +26,7 @@ if (missing.length) {
   console.error('');
   console.error('【启动失败】缺少依赖模块:', missing.join(', '));
   console.error('');
-  console.error('请在项目根目录（含 package.json 的目录）执行：');
-  console.error('');
-  console.error('  cd /www/wwwroot/nodejs');
-  console.error('  npm install');
-  console.error('');
-  console.error('然后再执行: npm start');
+  console.error('请在 backend/ 目录（含 package.json）执行 npm install 后再 npm start');
   console.error('');
   process.exit(1);
 }
