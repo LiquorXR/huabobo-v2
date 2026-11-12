@@ -126,6 +126,7 @@ const HUMAN_GREETING =
 
 let humanPhase = 'idle';
 let humanSpeakTimer = 0;
+let humanSpeakStepTimer = 0;
 let humanSpeakToken = 0;
 let humanVoice = null;
 let realReviewStream = null;
@@ -1782,6 +1783,12 @@ function stopHumanSpeech() {
     clearTimeout(humanSpeakTimer);
     humanSpeakTimer = 0;
   }
+  if (humanSpeakStepTimer) {
+    try {
+      window.clearTimeout(humanSpeakStepTimer);
+    } catch (e) {}
+    humanSpeakStepTimer = 0;
+  }
   if (window.speechSynthesis) {
     try {
       window.speechSynthesis.cancel();
@@ -1824,13 +1831,28 @@ function toSpeakChunks(text) {
     .replace(/「|」|“|”/g, '')
     .replace(/\s*AI\s*/g, '')
     .replace(/\s+/g, '');
-  const parts = [];
+  const raw = [];
   cleaned.replace(/[^。！？；…]+[。！？；…]?/g, function (m) {
     const s = m.trim();
-    if (s) parts.push(s);
+    if (s) raw.push(s);
     return m;
   });
-  return parts.length ? parts : cleaned ? [cleaned] : [];
+  // 超短碎片（单个语气词/感叹词）单独朗读会被听成"嘟"的一声：丢掉纯标点，并入相邻分句
+  // （合并后仍封顶，避免长文案并成一句、触发浏览器超长断句 bug）
+  const merged = [];
+  raw.forEach(function (t) {
+    if (/^[，。！？；…、,\s]+$/.test(t)) return;
+    const prev = merged.length ? merged[merged.length - 1] : '';
+    const prevCore = prev.replace(/[。！？；…\s]+/g, '');
+    const curCore = t.replace(/[。！？；…\s]+/g, '');
+    if (prev && prevCore.length + curCore.length <= 14 && (prevCore.length < 6 || curCore.length < 4)) {
+      merged[merged.length - 1] = prev + t;
+    } else {
+      merged.push(t);
+    }
+  });
+  if (merged.length) return merged;
+  return raw.length ? raw : cleaned ? [cleaned] : [];
 }
 
 function toSpeakWhole(text) {
@@ -1846,16 +1868,18 @@ function speakChunk(chunk, index, total, onEnd, onFail) {
   u.lang = (humanVoice && humanVoice.lang) || 'zh-CN';
   if (humanVoice) u.voice = humanVoice;
   u.volume = 1;
-  u.rate = 0.88 + (index % 3) * 0.03;
-  u.pitch = 1.12 + (index % 2) * 0.04;
+  // 固定语速语调：之前按分句抖动 rate/pitch，相邻两句音色起伏会被听成断断续续
+  u.rate = 0.95;
+  u.pitch = 1.05;
   u.onend = onEnd;
   u.onerror = onFail;
   window.speechSynthesis.speak(u);
 }
 
-/* 豆包 TTS（后端代理，音色锁死在服务端）：优先走后端，失败回退浏览器发音 */
+/* 服务端 TTS（后端代理，音色锁死在服务端）：优先走后端，失败回退浏览器发音 */
 let humanAudio = null;
 let humanAudioResolve = null;
+let humanPcmStop = null;
 
 function stopHumanAudio() {
   if (humanAudio) {
@@ -1863,6 +1887,13 @@ function stopHumanAudio() {
       humanAudio.pause();
     } catch (e) {}
     humanAudio = null;
+  }
+  if (humanPcmStop) {
+    const stop = humanPcmStop;
+    humanPcmStop = null;
+    try {
+      stop();
+    } catch (e) {}
   }
   if (humanAudioResolve) {
     const r = humanAudioResolve;
@@ -1873,13 +1904,20 @@ function stopHumanAudio() {
   }
 }
 
+let ttsSharedCtx = null;
 function unlockTtsAudio() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC) {
-      const ctx = new AC();
-      if (ctx.state === 'suspended' && ctx.resume) ctx.resume().catch(function () {});
-      if (ctx.close) window.setTimeout(function () { try { ctx.close(); } catch (e) {} }, 3000);
+    if (!AC) return;
+    if (!ttsSharedCtx) {
+      try {
+        ttsSharedCtx = new AC();
+      } catch (e) {
+        return;
+      }
+    }
+    if (ttsSharedCtx.state === 'suspended' && ttsSharedCtx.resume) {
+      ttsSharedCtx.resume().catch(function () {});
     }
   } catch (e) {}
 }
@@ -1888,7 +1926,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('keydown', unlockTtsAudio);
 }
 
-function fetchTtsAudio(text) {
+function fetchTtsAudio(text, timeoutMs, attempt) {
   const base = apiBase();
   if (!base) return Promise.reject(new Error('no backend'));
   let ctrl = null;
@@ -1900,9 +1938,14 @@ function fetchTtsAudio(text) {
         try {
           ctrl.abort();
         } catch (e) {}
-      }, 12000);
+      }, timeoutMs || 12000);
     }
   } catch (e) {}
+  function cleanup(res, err) {
+    if (timer) window.clearTimeout(timer);
+    if (err) throw err;
+    return res;
+  }
   return fetch(base + '/api/tts/speak', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1910,23 +1953,108 @@ function fetchTtsAudio(text) {
     signal: ctrl ? ctrl.signal : undefined
   }).then(
     function (res) {
-      if (timer) window.clearTimeout(timer);
-      if (!res.ok) throw new Error('tts ' + res.status);
-      const ct = res.headers.get('content-type') || '';
-      if (ct.indexOf('audio/') !== 0) throw new Error('tts bad content');
-      return res.blob();
+      // 被后端限流（同 IP 800ms 内重复请求）：等一拍重试一次，保住服务端音色，
+      // 避免当场降级成浏览器音、两句两种声音听起来一卡一卡；最多重试 2 次
+      if (res.status === 429 && (attempt || 0) < 2) {
+        cleanup(res);
+        let waitMs = 1000;
+        try {
+          const ra = parseFloat(res.headers.get('retry-after') || '');
+          if (isFinite(ra) && ra > 0 && ra <= 5) waitMs = ra * 1000;
+        } catch (e) {}
+        return new Promise(function (resolve) {
+          window.setTimeout(resolve, waitMs);
+        }).then(function () {
+          return fetchTtsAudio(text, timeoutMs, (attempt || 0) + 1);
+        });
+      }
+      return cleanup(res);
     },
     function (e) {
-      if (timer) window.clearTimeout(timer);
-      throw e;
+      cleanup(null, e);
+      return null;
     }
-  ).then(function (blob) {
+  ).then(function (res) {
+    if (!res.ok) throw new Error('tts ' + res.status);
+    const ct = res.headers.get('content-type') || '';
+    if (ct.indexOf('audio/') !== 0) throw new Error('tts bad content');
+    return res.blob();
+  }).then(function (blob) {
     if (!blob || !blob.size) throw new Error('tts empty');
     return blob;
   });
 }
 
+function playPcmBlob16k(blob) {
+  // 兜底：万一拿到裸 PCM（24000Hz/16bit/单声道），用 WebAudio 解码播放
+  return new Promise(function (resolve, reject) {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) {
+        reject(new Error('no webaudio'));
+        return;
+      }
+      const ctx = new AC({ sampleRate: 24000 });
+      const reader = new FileReader();
+      reader.onload = function () {
+        try {
+          const bytes = new Int16Array(reader.result);
+          if (!bytes.length) {
+            reject(new Error('empty pcm'));
+            return;
+          }
+          const buf = ctx.createBuffer(1, bytes.length, 24000);
+          const ch = buf.getChannelData(0);
+          for (let i = 0; i < bytes.length; i++) ch[i] = bytes[i] / 32768;
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(ctx.destination);
+          let stopFn = null;
+          const done = function (ok) {
+            try {
+              src.disconnect();
+            } catch (e) {}
+            try {
+              if (ctx.close) ctx.close().catch(function () {});
+            } catch (e) {}
+            if (humanPcmStop === stopFn) humanPcmStop = null;
+            if (ok) resolve();
+            else reject(new Error('pcm play error'));
+          };
+          stopFn = function () {
+            try {
+              src.stop();
+            } catch (e) {}
+            done(true);
+          };
+          humanPcmStop = stopFn;
+          src.onended = function () {
+            done(true);
+          };
+          if (ctx.state === 'suspended' && ctx.resume) {
+            ctx.resume().catch(function () {});
+          }
+          src.start();
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.onerror = function () {
+        reject(new Error('pcm read fail'));
+      };
+      reader.readAsArrayBuffer(blob);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
 function playTtsBlob(blob) {
+  // 裸 PCM 走 WebAudio 兜底，其他走 <audio> 整段播放
+  if (blob && blob.type && blob.type.indexOf('pcm') >= 0) {
+    stopHumanAudio();
+    return playPcmBlob16k(blob);
+  }
   return new Promise(function (resolve, reject) {
     try {
       stopHumanAudio();
@@ -1962,36 +2090,6 @@ function playTtsBlob(blob) {
     } catch (e) {
       reject(e);
     }
-  });
-}
-
-function tryBackendChunk(chunk, token) {
-  return fetchTtsAudio(chunk).then(
-    function (blob) {
-      if (token !== humanSpeakToken) return false;
-      return playTtsBlob(blob).then(
-        function () {
-          return token === humanSpeakToken;
-        },
-        function () {
-          return false;
-        }
-      );
-    },
-    function () {
-      return false;
-    }
-  );
-}
-
-function speakChunkSmart(chunk, index, total, token, onEnd, onFail) {
-  tryBackendChunk(chunk, token).then(function (played) {
-    if (token !== humanSpeakToken) return;
-    if (played) {
-      onEnd();
-      return;
-    }
-    speakChunk(chunk, index, total, onEnd, onFail);
   });
 }
 
@@ -2050,9 +2148,20 @@ async function fetchReviewText(context) {
 }
 
 function speakHuman(text, onDone) {
+  // 先停掉上一段：否则新旧两段重叠/上一段被半路掐断，听起来就是卡顿加"嘟"声
+  stopHumanSpeech();
   const token = ++humanSpeakToken;
+  function clearStepTimer() {
+    if (humanSpeakStepTimer) {
+      try {
+        window.clearTimeout(humanSpeakStepTimer);
+      } catch (e) {}
+      humanSpeakStepTimer = 0;
+    }
+  }
   function finish() {
     if (token !== humanSpeakToken) return;
+    clearStepTimer();
     if (humanSpeakTimer) {
       try {
         window.clearTimeout(humanSpeakTimer);
@@ -2067,8 +2176,10 @@ function speakHuman(text, onDone) {
     finish();
     return;
   }
-  // 整段优先：一次合成、一次播放，语气不断句；失败再降级为逐段播放
-  fetchTtsAudio(whole).then(
+  // 整段优先：一次合成、一次播放，语气不断句；失败再降级为浏览器逐段播放
+  // 注意降级后全程只用浏览器单音色，不再逐段回请求后端——之前逐段混用服务端/浏览器
+  // 两种声音，外加 800ms 后端限流撞上 260ms 段间隔频繁 429，就是断断续续的根源
+  fetchTtsAudio(whole, 25000).then(
     function (blob) {
       if (token !== humanSpeakToken) return;
       humanSpeakTimer = window.setTimeout(
@@ -2112,19 +2223,17 @@ function speakHuman(text, onDone) {
       const chunk = chunks[i];
       const idx = i;
       i += 1;
-      speakChunkSmart(
+      speakChunk(
         chunk,
         idx,
         chunks.length,
-        token,
         function () {
           if (token !== humanSpeakToken) return;
-          const pause = chunk.length > 18 ? 420 : 260;
-          humanSpeakTimer = window.setTimeout(next, pause);
+          humanSpeakStepTimer = window.setTimeout(next, 150);
         },
         function () {
           if (token !== humanSpeakToken) return;
-          humanSpeakTimer = window.setTimeout(next, 80);
+          humanSpeakStepTimer = window.setTimeout(next, 80);
         }
       );
     }
@@ -2135,6 +2244,7 @@ function speakHuman(text, onDone) {
         ensureHumanVoice();
       };
       window.setTimeout(function () {
+        if (token !== humanSpeakToken) return;
         ensureHumanVoice();
         next();
       }, 180);

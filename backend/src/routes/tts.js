@@ -23,6 +23,7 @@ const DOUBAO_TTS_URL = 'https://openspeech.bytedance.com/api/v3/tts/unidirection
 const MAX_TEXT_LEN = 800;
 const MIN_INTERVAL_MS = 800;
 const UPSTREAM_TIMEOUT_MS = 20000;
+const TTS_SAMPLE_RATE = 24000; // 智谱 TTS 固定 24kHz / 16bit / 单声道
 
 const lastHitByIp = new Map();
 function clampNum(v, def, min, max) {
@@ -36,6 +37,49 @@ setInterval(function () {  // 防止 Map 无限增长：只保留最近 5 分钟
     if (t < cutoff) lastHitByIp.delete(ip);
   });
 }, 60 * 1000).unref();
+
+function pcm16ToWavBuffer(pcm, sampleRate) {
+  const rate = sampleRate || TTS_SAMPLE_RATE;
+  const dataLen = pcm.length;
+  const buf = Buffer.alloc(44 + dataLen);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + dataLen, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28); // byte rate: 16bit mono
+  buf.writeUInt16LE(2, 32); // block align
+  buf.writeUInt16LE(16, 34); // bits per sample
+  buf.write('data', 36);
+  buf.writeUInt32LE(dataLen, 40);
+  pcm.copy(buf, 44);
+  return buf;
+}
+
+function hasRiffWavHeader(audio) {
+  return (
+    audio && audio.length > 12 &&
+    audio[0] === 0x52 && audio[1] === 0x49 && audio[2] === 0x46 && audio[3] === 0x46 && // RIFF
+    audio[8] === 0x57 && audio[9] === 0x41 && audio[10] === 0x56 && audio[11] === 0x45 // WAVE
+  );
+}
+
+// 浏览器 <audio> 播不了裸 PCM（会解码失败/杂音）：
+// 上游若返回 pcm（智谱默认格式）或缺 RIFF 头，一律包成 wav 再下发，前端只收到 audio/wav。
+function ensureWav(audio, contentType) {
+  const ct = String(contentType || '').toLowerCase();
+  if (ct.indexOf('pcm') >= 0) {
+    return { audio: pcm16ToWavBuffer(audio), contentType: 'audio/wav' };
+  }
+  if (ct.indexOf('wav') >= 0 || ct.indexOf('wave') >= 0 || ct.indexOf('octet-stream') >= 0) {
+    if (hasRiffWavHeader(audio)) return { audio: audio, contentType: 'audio/wav' };
+    return { audio: pcm16ToWavBuffer(audio), contentType: 'audio/wav' };
+  }
+  return { audio: audio, contentType: String(contentType || 'audio/wav') };
+}
 
 function ttsConfig() {
   if (process.env.ZHIPU_API_KEY) {
@@ -130,6 +174,7 @@ router.post(
       req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
     const now = Date.now();
     if (now - (lastHitByIp.get(ip) || 0) < MIN_INTERVAL_MS) {
+      res.set('Retry-After', '1');
       return res.status(429).json({ ok: false, message: '请求太频繁' });
     }
     lastHitByIp.set(ip, now);
@@ -150,11 +195,12 @@ router.post(
           return res.status(502).json({ ok: false, message: '语音服务连接失败' });
         }
         clearTimeout(timer);
-        res.set('Content-Type', out.contentType);
-        res.set('Content-Length', String(out.audio.length));
+        const wav = ensureWav(out.audio, out.contentType);
+        res.set('Content-Type', wav.contentType);
+        res.set('Content-Length', String(wav.audio.length));
         res.set('Cache-Control', 'no-store');
         res.set('X-TTS-Provider', 'zhipu');
-        return res.send(out.audio);
+        return res.send(wav.audio);
       }
 
       let upstream;
@@ -267,3 +313,5 @@ router.post(
 );
 
 module.exports = router;
+// 单测用：不影响 router 本体
+module.exports.ttsTestUtils = { pcm16ToWavBuffer: pcm16ToWavBuffer, hasRiffWavHeader: hasRiffWavHeader, ensureWav: ensureWav };
