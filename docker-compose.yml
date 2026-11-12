@@ -32,6 +32,9 @@ services:
       UPLOAD_DIR: /data/uploads
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      DOUBAO_TTS_API_KEY: ${DOUBAO_TTS_API_KEY:-}
+      DOUBAO_TTS_SPEAKER: ${DOUBAO_TTS_SPEAKER:-}
+      DOUBAO_TTS_RESOURCE_ID: ${DOUBAO_TTS_RESOURCE_ID:-seed-tts-2.0}
     volumes:
       - uploads-data:/data/uploads
     healthcheck:
