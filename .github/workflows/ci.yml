@@ -26,6 +26,12 @@ jobs:
           printf 'DOMAIN=ci.local\nPOSTGRES_USER=mydb\nPOSTGRES_DB=mydb\nPOSTGRES_PASSWORD=ci_pass\nJWT_SECRET=ci_secret\n' > .env
           docker compose config -q && echo "compose ok"
           rm -f .env
+      - name: required env documented
+        run: |
+          for v in DOMAIN POSTGRES_PASSWORD JWT_SECRET; do
+            grep -q "$v" .env.example || { echo "missing $v in .env.example"; exit 1; }
+          done
+          echo "env docs ok"
       - name: validate Caddyfile
         run: docker run --rm -e DOMAIN=ci.local -v $PWD/web/Caddyfile:/etc/caddy/Caddyfile:ro caddy:alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
@@ -166,3 +172,31 @@ jobs:
           docker logs backend-ci
           docker rm -f backend-ci
           exit $code
+
+  deploy-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: bring up production stack
+        run: |
+          printf 'DOMAIN=localhost\nPOSTGRES_USER=mydb\nPOSTGRES_DB=mydb\nPOSTGRES_PASSWORD=ci_pass\nJWT_SECRET=ci_secret_0123456789abcdef\n' > .env
+          docker compose up -d --build
+          docker compose ps
+      - name: smoke through Caddy (https, full stack)
+        run: |
+          for i in $(seq 1 36); do
+            if curl -sk https://localhost/api/health | grep -q '"db":"connected"'; then break; fi
+            sleep 5
+          done
+          curl -sk https://localhost/api/health
+          curl -sk https://localhost/ -o /dev/null -w "frontend %{http_code}\n"
+          NODE_TLS_REJECT_UNAUTHORIZED=0 SMOKE_BASE=https://localhost node backend/scripts/smoke.js
+      - name: dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: tear down
+        if: always()
+        run: docker compose down -v
