@@ -6,7 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const router = express.Router();
 
 /**
- * POST http://8.160.184.132:3000/api/admin/login
+ * POST /api/admin/login
  * Body: { username, password }
  */
 router.post(

@@ -16,7 +16,7 @@
     if (saved) return saved.replace(/\/$/, '');
     if (window.ADMIN_API_BASE) return String(window.ADMIN_API_BASE).replace(/\/$/, '');
     if (window.location.protocol === 'file:') {
-      return 'http://8.160.184.132:3000';
+      return 'http://127.0.0.1:3000';
     }
     return window.location.origin.replace(/\/$/, '');
   }
@@ -45,9 +45,9 @@
         '无法连接后台 API（' +
         getApiBase() +
         '）\n\n请检查：\n' +
-        '1. 服务器已执行 npm start 且 Node 在运行\n' +
-        '2. 安全组/防火墙已放行 3000 端口\n' +
-        '3. 浏览器直接打开：http://8.160.184.132:3000/api/health\n' +
+        '1. 后端服务已启动（本地 `npm start` / 生产 `docker compose ps` 全 Up）\n' +
+        '2. 同源部署无需放行端口；若前后端分开部署，在服务器安全组放行后端端口\n' +
+        '3. 浏览器直接打开：' + getApiBase() + '/api/health\n' +
         '4. 本地打开 HTML 时，请在登录页确认 API 地址正确'
       );
     }
@@ -159,7 +159,7 @@
           throw new Error(
             '请求超时（' +
               Math.round(timeoutMs / 1000) +
-              ' 秒）。常见原因：① MongoDB 未连接 ② 图片过大 ③ 服务器未重启最新代码。请先打开 ' +
+              ' 秒）。常见原因：① 数据库未连接 ② 图片过大 ③ 服务器未重启最新代码。请先打开 ' +
               getApiBase() +
               '/api/health 查看 db 是否为 connected'
           );

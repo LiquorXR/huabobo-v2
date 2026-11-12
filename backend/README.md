@@ -6,17 +6,18 @@
 
 | 用途 | 地址 |
 |------|------|
-| **服务器 IP** | `8.160.184.132` |
-| **API 根地址** | `http://8.160.184.132:3000` |
-| **前端静态站** | `http://8.160.184.132`（HTML 页面，端口以实际部署为准） |
-| 健康检查 | `GET http://8.160.184.132:3000/api/health` |
-| **管理后台页面** | `http://8.160.184.132:3000/admin/` |
-| 管理员登录接口 | `POST http://8.160.184.132:3000/api/admin/login` |
-| 上传文件访问 | `http://8.160.184.132:3000/uploads/...` |
+| **生产站点** | `https://你的域名`（Caddy 自动 HTTPS） |
+| **API 根地址** | 同源 `/api`（Caddy 反代到后端 :3000） |
+| **本地后端** | `http://127.0.0.1:3000` |
+| **本地前端** | `http://127.0.0.1:8765` |
+| 健康检查 | `GET /api/health` |
+| **管理后台页面** | `https://你的域名/admin/`（本地：`http://127.0.0.1:3000/admin/`） |
+| 管理员登录接口 | `POST /api/admin/login` |
+| 上传文件访问 | `/uploads/...` |
 
 管理员默认账号：`admin` / `zhijiansu@admin`
 
-下文接口均以 **`http://8.160.184.132:3000`** 为根地址；路径栏也可只写 `/api/...`，自行拼接。
+下文接口均以 `/api` 为根路径；生产环境拼接到你的域名后，本地调试拼接到 `http://127.0.0.1:3000`。
 
 > 生产统一走 Docker + Caddy（同源 `/api`，无端口概念），本节的 IP:端口写法仅用于本地直连调试；`PUBLIC_BASE_URL` 由 compose 的 `DOMAIN` 自动生成。
 
@@ -110,13 +111,13 @@ Authorization: Bearer <token>
 
 ## 接口一览
 
-**根地址：** `http://8.160.184.132:3000`
+**根地址：** ``
 
 ### 0. 健康检查（公开）
 
 | 方法 | 完整地址 |
 |------|----------|
-| GET | `http://8.160.184.132:3000/api/health` |
+| GET | `/api/health` |
 
 响应含 `ok`、`db`（connected/disconnected）、`uploadDir`、`uploadFileCount`。
 
@@ -126,10 +127,10 @@ Authorization: Bearer <token>
 
 | 方法 | 完整地址 | 说明 |
 |------|----------|------|
-| POST | `http://8.160.184.132:3000/api/admin/login` | 登录，Body：`{ "username", "password" }` |
-| GET | `http://8.160.184.132:3000/api/admin/dashboard` | 数据看板（需 `Authorization: Bearer <token>`） |
+| POST | `/api/admin/login` | 登录，Body：`{ "username", "password" }` |
+| GET | `/api/admin/dashboard` | 数据看板（需 `Authorization: Bearer <token>`） |
 
-管理后台页面：`http://8.160.184.132:3000/admin/`
+管理后台页面：`/admin/`
 
 ---
 
@@ -137,19 +138,19 @@ Authorization: Bearer <token>
 
 | 方法 | 完整地址 | 说明 |
 |------|----------|------|
-| POST | `http://8.160.184.132:3000/api/users/register` | 注册 `{ username, password, nickname }`（用户名 2-20 字） |
-| POST | `http://8.160.184.132:3000/api/users/login` | 登录 `{ username, password }` |
-| GET | `http://8.160.184.132:3000/api/users/:id` | 用户公开资料 |
-| PATCH / POST | `http://8.160.184.132:3000/api/users/:id/profile` | 修改昵称 `{ nickname }` |
-| POST | `http://8.160.184.132:3000/api/users/:id/avatar` | 上传头像，`multipart` 字段 `avatar` |
+| POST | `/api/users/register` | 注册 `{ username, password, nickname }`（用户名 2-20 字） |
+| POST | `/api/users/login` | 登录 `{ username, password }` |
+| GET | `/api/users/:id` | 用户公开资料 |
+| PATCH / POST | `/api/users/:id/profile` | 修改昵称 `{ nickname }` |
+| POST | `/api/users/:id/avatar` | 上传头像，`multipart` 字段 `avatar` |
 
 **管理员：**
 
 | 方法 | 完整地址 |
 |------|----------|
-| GET | `http://8.160.184.132:3000/api/admin/users?page=1&limit=20&keyword=` |
-| DELETE | `http://8.160.184.132:3000/api/admin/users/:id` |
-| PATCH | `http://8.160.184.132:3000/api/admin/users/:id/password` — Body：`{ "newPassword" }` |
+| GET | `/api/admin/users?page=1&limit=20&keyword=` |
+| DELETE | `/api/admin/users/:id` |
+| PATCH | `/api/admin/users/:id/password` — Body：`{ "newPassword" }` |
 
 ---
 
@@ -157,11 +158,11 @@ Authorization: Bearer <token>
 
 | 方法 | 完整地址 | 权限 |
 |------|----------|------|
-| GET | `http://8.160.184.132:3000/api/news?page=1&limit=10` | 公开列表 |
-| GET | `http://8.160.184.132:3000/api/news/:id` | 公开详情 |
-| POST | `http://8.160.184.132:3000/api/admin/news` | 管理员发布 |
-| PUT | `http://8.160.184.132:3000/api/admin/news/:id` | 管理员修改 |
-| DELETE | `http://8.160.184.132:3000/api/admin/news/:id` | 管理员删除 |
+| GET | `/api/news?page=1&limit=10` | 公开列表 |
+| GET | `/api/news/:id` | 公开详情 |
+| POST | `/api/admin/news` | 管理员发布 |
+| PUT | `/api/admin/news/:id` | 管理员修改 |
+| DELETE | `/api/admin/news/:id` | 管理员删除 |
 
 发布/修改：`multipart/form-data` — `title`、`summary`、`content`、`publishedAt`、`image`
 
@@ -171,11 +172,11 @@ Authorization: Bearer <token>
 
 | 方法 | 完整地址 | 权限 |
 |------|----------|------|
-| GET | `http://8.160.184.132:3000/api/artisans` | 公开列表 |
-| GET | `http://8.160.184.132:3000/api/artisans/:id` | 公开详情 |
-| POST | `http://8.160.184.132:3000/api/admin/artisans` | 管理员新增 |
-| PUT | `http://8.160.184.132:3000/api/admin/artisans/:id` | 管理员修改 |
-| DELETE | `http://8.160.184.132:3000/api/admin/artisans/:id` | 管理员删除 |
+| GET | `/api/artisans` | 公开列表 |
+| GET | `/api/artisans/:id` | 公开详情 |
+| POST | `/api/admin/artisans` | 管理员新增 |
+| PUT | `/api/admin/artisans/:id` | 管理员修改 |
+| DELETE | `/api/admin/artisans/:id` | 管理员删除 |
 
 ---
 
@@ -183,10 +184,10 @@ Authorization: Bearer <token>
 
 | 方法 | 完整地址 | 说明 |
 |------|----------|------|
-| GET | `http://8.160.184.132:3000/api/works` | 已发布列表；`?userId=&includeDraft=1` 查某用户含草稿 |
-| GET | `http://8.160.184.132:3000/api/works/:id` | 单件作品详情 |
-| POST | `http://8.160.184.132:3000/api/works` | 保存/发布（DIY 作品集）；JSON 或 `multipart` 字段 `cover` |
-| DELETE | `http://8.160.184.132:3000/api/works/:id?userId=` | 删除自己的作品 |
+| GET | `/api/works` | 已发布列表；`?userId=&includeDraft=1` 查某用户含草稿 |
+| GET | `/api/works/:id` | 单件作品详情 |
+| POST | `/api/works` | 保存/发布（DIY 作品集）；JSON 或 `multipart` 字段 `cover` |
+| DELETE | `/api/works/:id?userId=` | 删除自己的作品 |
 
 Body 常用字段：`userId`、`title`、`tag`、`desc`、`publish`、`workType`（`model` / `ar_snapshot`）、`image` / `imageKeep`、`id`（更新时）
 
@@ -196,12 +197,12 @@ Body 常用字段：`userId`、`title`、`tag`、`desc`、`publish`、`workType`
 
 | 方法 | 完整地址 | 说明 |
 |------|----------|------|
-| GET | `http://8.160.184.132:3000/api/engagement?workIds=id1,id2&viewerId=` | 批量点赞数、留言数、是否已赞、留言列表 |
-| POST | `http://8.160.184.132:3000/api/engagement/like` | 点赞/取消 `{ workId, userId }` |
-| GET | `http://8.160.184.132:3000/api/comments?workId=` | 某作品留言列表 |
-| POST | `http://8.160.184.132:3000/api/comments` | 发表留言 `{ workId, userId, text }` |
-| GET | `http://8.160.184.132:3000/api/admin/comments` | 管理员留言列表 |
-| DELETE | `http://8.160.184.132:3000/api/admin/comments/:id` | 管理员删除留言 |
+| GET | `/api/engagement?workIds=id1,id2&viewerId=` | 批量点赞数、留言数、是否已赞、留言列表 |
+| POST | `/api/engagement/like` | 点赞/取消 `{ workId, userId }` |
+| GET | `/api/comments?workId=` | 某作品留言列表 |
+| POST | `/api/comments` | 发表留言 `{ workId, userId, text }` |
+| GET | `/api/admin/comments` | 管理员留言列表 |
+| DELETE | `/api/admin/comments/:id` | 管理员删除留言 |
 
 ---
 
@@ -209,11 +210,11 @@ Body 常用字段：`userId`、`title`、`tag`、`desc`、`publish`、`workType`
 
 | 方法 | 完整地址 | 说明 |
 |------|----------|------|
-| GET | `http://8.160.184.132:3000/api/studio-models` | 前台模型库列表（GLB） |
-| GET | `http://8.160.184.132:3000/api/admin/studio-models` | 管理员列表 |
-| POST | `http://8.160.184.132:3000/api/admin/studio-models` | 上传 GLB + 缩略图 |
-| PUT | `http://8.160.184.132:3000/api/admin/studio-models/:id` | 修改 |
-| DELETE | `http://8.160.184.132:3000/api/admin/studio-models/:id` | 删除 |
+| GET | `/api/studio-models` | 前台模型库列表（GLB） |
+| GET | `/api/admin/studio-models` | 管理员列表 |
+| POST | `/api/admin/studio-models` | 上传 GLB + 缩略图 |
+| PUT | `/api/admin/studio-models/:id` | 修改 |
+| DELETE | `/api/admin/studio-models/:id` | 删除 |
 
 上传字段：`glb`（必填）、`thumbnail`（可选）、`name`、`desc`、`sortOrder`
 
@@ -223,9 +224,9 @@ Body 常用字段：`userId`、`title`、`tag`、`desc`、`publish`、`workType`
 
 | 方法 | 完整地址 | 说明 |
 |------|----------|------|
-| GET | `http://8.160.184.132:3000/api/about` | 公开页面数据 |
-| GET | `http://8.160.184.132:3000/api/admin/about` | 管理员读取 |
-| PUT | `http://8.160.184.132:3000/api/admin/about` | 管理员保存（含图片上传） |
+| GET | `/api/about` | 公开页面数据 |
+| GET | `/api/admin/about` | 管理员读取 |
+| PUT | `/api/admin/about` | 管理员保存（含图片上传） |
 
 ---
 
@@ -240,14 +241,14 @@ DATABASE_URL=file:./dev.db
 # DATABASE_URL=postgres://mydb:YOUR_PASSWORD@127.0.0.1:5432/mydb
 PORT=3000
 JWT_SECRET=请改为随机长字符串
-PUBLIC_BASE_URL=http://8.160.184.132:3000
+PUBLIC_BASE_URL=
 ```
 
 ## 上传文件
 
 图片、GLB 模型保存在 **`uploads/`** 目录（不在 Git 仓库内），数据库只存路径如 `/uploads/models/xxx.glb`。
 
-访问示例：`http://8.160.184.132:3000/uploads/news/xxx.jpg`
+访问示例：`/uploads/news/xxx.jpg`
 
 ### 为什么重启/更新后台后图片会消失？
 
@@ -277,7 +278,7 @@ UPLOAD_DIR=/var/lib/zhijiansu/uploads
 4. 重启 Node 后检查：
 
 ```bash
-curl http://8.160.184.132:3000/api/health
+curl /api/health
 # 查看 uploadDir 与 uploadFileCount 是否正常
 ```
 
@@ -292,13 +293,13 @@ curl http://8.160.184.132:3000/api/health
 frontend `js/api-config.js` 已配置：
 
 ```javascript
-ZJS.API_BASE = 'http://8.160.184.132:3000';
+ZJS.API_BASE = '';
 ZJS.USE_BACKEND = true;
 ```
 
-静态网站与 API 不在同域时，后台已开启 `cors`。若前端部署在 `http://8.160.184.132` 其他端口，直接打开页面即可请求上述接口。
+静态网站与 API 不在同域时，后台已开启 `cors`。若前端部署在 `http://127.0.0.1:8765` 其他端口，直接打开页面即可请求上述接口。
 
-| 前端页面 | 使用的接口（根地址 `http://8.160.184.132:3000`） |
+| 前端页面 | 使用的接口（根地址 ``） |
 |----------|------------------------------------------------|
 | register.html / login.html | `POST /api/users/register`、`POST /api/users/login` |
 | profile.html | `GET /api/users/:id`、`PATCH /api/users/:id/profile`、`POST /api/users/:id/avatar` |
@@ -310,7 +311,7 @@ ZJS.USE_BACKEND = true;
 | work.html | `GET /api/works/:id`、`GET /api/engagement`、`POST /api/comments` |
 | studio.html | `GET /api/studio-models`、`POST /api/works` |
 | about.html | `GET /api/about` |
-| 管理后台 | `http://8.160.184.132:3000/admin/` → `POST /api/admin/login` 及 `/api/admin/*` |
+| 管理后台 | `/admin/` → `POST /api/admin/login` 及 `/api/admin/*` |
 
 ## 常见错误
 

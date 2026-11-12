@@ -34,11 +34,11 @@
 
 ```javascript
 // api-config.js
-ZJS.API_BASE = 'http://8.160.184.132:3000';
+ZJS.API_BASE = location.origin; // 同源（本地为 http://127.0.0.1:3000）
 ZJS.USE_BACKEND = true;
 
 // 请求示例
-fetch('http://8.160.184.132:3000/api/users/' + id).then(function (r) { return r.json(); });
+fetch(location.origin + '/api/users/' + id).then(function (r) { return r.json(); });
 ```
 
 ## 链接规范

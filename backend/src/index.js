@@ -90,7 +90,7 @@ async function start() {
   var uploadStats = getUploadStats(config.uploadDir);
   app.listen(config.port, host, function () {
     console.log('[server] 指间塑后台已监听 http://' + host + ':' + config.port);
-    console.log('[server] 管理后台 http://8.160.184.132:' + config.port + '/admin/');
+    console.log('[server] 管理后台 http://127.0.0.1:' + config.port + '/admin/');
     console.log('[server] 管理员登录 POST /api/admin/login');
     console.log('[server] 默认管理员:', config.adminUsername);
     console.log('[server] 上传目录:', uploadStats.dir, '（文件数:', uploadStats.fileCount + '）');

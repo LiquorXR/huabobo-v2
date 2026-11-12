@@ -9,7 +9,7 @@
 
   if (window.location.protocol === 'file:') {
     statusEl.innerHTML =
-      '⚠ 当前为本地文件打开，无法连接后台。请通过 <strong>https://www.songqingtian.top/</strong> 访问本站。';
+      '⚠ 当前为本地文件打开，无法连接后台。请用本地服务打开本站（如前端目录执行 npm start 后访问 http://127.0.0.1:8765/），或部署后用站点域名访问。';
     statusEl.className = 'auth-status is-bad';
     return;
   }
@@ -22,7 +22,7 @@
     .then(function (data) {
       if (data && data.ok) {
         statusEl.textContent =
-          '后台已连通' + (data.db === 'connected' ? '，可以注册 / 登录' : '（数据库未连接，请检查 MongoDB）');
+          '后台已连通' + (data.db === 'connected' ? '，可以注册 / 登录' : '（数据库未连接：本地检查 dev.db，生产检查 postgres 容器）');
         statusEl.className = 'auth-status ' + (data.db === 'connected' ? 'is-ok' : 'is-bad');
       } else {
         throw new Error('服务异常');

@@ -6,6 +6,6 @@ if [ ! -d "node_modules" ]; then
   echo "正在安装依赖…"
   npm install
 fi
-echo "启动后台 http://8.160.184.132:3000"
-echo "管理后台 http://8.160.184.132:3000/admin/"
+echo "启动后台 http://127.0.0.1:3000"
+echo "管理后台 http://127.0.0.1:3000/admin/"
 npm start

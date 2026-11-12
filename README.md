@@ -7,7 +7,7 @@ huabobo-v2/
   backend/          # Express + Drizzle (PG prod / SQLite local)
     src/            # index.js, config.js, db/, routes/, middleware/, utils/
     public/admin/   # admin console (vendor/ = three.js + built thumb bundle)
-    scripts/        # check-deps.js, smoke.js, mongo-to-sql.js, ...
+    scripts/        # check-deps.js, smoke.js, build-admin-thumb.mjs, ...
     uploads/        # runtime uploads (gitignored, only .gitkeep tracked)
     drizzle/        # committed PG + SQLite migrations
     start.sh / start.bat

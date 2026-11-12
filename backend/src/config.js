@@ -58,8 +58,8 @@ module.exports = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   adminUsername: ADMIN_USERNAME,
   adminPassword: ADMIN_PASSWORD,
-  publicBaseUrl: (process.env.PUBLIC_BASE_URL || 'http://8.160.184.132:3000').replace(/\/$/, ''),
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, ''),
   /** 前端静态站地址（用于 news/artisan 等 images/ 路径在管理后台显示） */
-  frontendBaseUrl: (process.env.FRONTEND_BASE_URL || 'http://8.160.184.132').replace(/\/$/, ''),
+  frontendBaseUrl: (process.env.FRONTEND_BASE_URL || 'http://127.0.0.1:8765').replace(/\/$/, ''),
   uploadDir: resolveUploadDir()
 };
