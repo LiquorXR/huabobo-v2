@@ -430,7 +430,7 @@
           console.warn('[huayang-tools] 模型加载失败:', tool.id, err);
           var msg = '模型未能加载，请确认文件位于 models/tools/ 目录';
           if (location.protocol === 'file:') {
-            msg = 'file:// 下加载受限，请用本地服务器打开（如 python3 -m http.server 8080）';
+            msg = 'file:// 下加载受限，请用本地服务器打开（前端目录执行 npm start）';
           } else if (err && err.message) {
             msg += '：' + err.message;
           }

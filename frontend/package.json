@@ -1,0 +1,13 @@
+{
+  "name": "zhijiansu-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "指间塑 MPA 静态站（零依赖本地开发服务器）",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "dev": "node scripts/serve.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

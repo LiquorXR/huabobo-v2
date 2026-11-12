@@ -14,7 +14,7 @@ huabobo-v2/
     install.sh / package.json / .nvmrc / .env.example
   frontend/         # MPA static site (was 前端)
     *.html css/ js/ images/ models/ scripts/
-    start.sh / start.bat        # python http.server :8765
+    start.sh / start.bat        # npm start（:8765，零依赖静态服务器 scripts/serve.js）
     ARCHITECTURE.md
   web/Caddyfile     # edge: auto HTTPS + static + /api reverse proxy
   docker-compose.yml  # 生产：web + backend + postgres:16
@@ -32,10 +32,9 @@ npm install              # 需要 Node >= 22
 npm run seed             # 可选：写入示例数据
 npm start              # 或 ./start.sh（Windows: start.bat）
 
-# frontend (another terminal)
+# frontend (another terminal, npm-based, zero deps)
 cd frontend
-./start.sh             # Windows: start.bat
-# open http://127.0.0.1:8765/digital.html
+npm start              # http://127.0.0.1:8765/digital.html（或 ./start.sh / start.bat）
 ```
 
 ## Production（Docker，不再需要宝塔）

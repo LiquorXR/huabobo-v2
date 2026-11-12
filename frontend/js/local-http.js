@@ -113,7 +113,7 @@
     },
 
     serverCommand: function () {
-      return 'python3 -m http.server 8765';
+      return 'npm start';
     },
 
     renderHelp: function (container, pageName) {
