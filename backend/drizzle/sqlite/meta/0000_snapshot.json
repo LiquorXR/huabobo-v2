@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "06c21fab-0c45-429d-8d4b-09e9d84f8d81",
+  "id": "4973224e-5772-4a0e-a842-c94adf8b6ed6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "users": {
@@ -14,8 +14,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "phone": {
-          "name": "phone",
+        "username": {
+          "name": "username",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -92,10 +92,10 @@
         }
       },
       "indexes": {
-        "users_phone_unique": {
-          "name": "users_phone_unique",
+        "users_username_unique": {
+          "name": "users_username_unique",
           "columns": [
-            "phone"
+            "username"
           ],
           "isUnique": true
         }

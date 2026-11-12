@@ -33,7 +33,7 @@ async function req(method, path, body, token) {
 }
 
 (async function main() {
-  const phone = '139' + String(Date.now()).slice(-8);
+  const username = 'ci' + String(Date.now()).slice(-8);
 
   let r = await req('GET', '/api/health');
   check('health 200', r.status === 200, r);
@@ -59,11 +59,11 @@ async function req(method, path, body, token) {
   r = await req('GET', '/api/studio-models');
   check('studio-models no categoryId 400', r.status === 400, r);
 
-  r = await req('POST', '/api/users/register', { phone, password: '123456', nickname: 'CI' });
+  r = await req('POST', '/api/users/register', { username, password: '123456', nickname: 'CI' });
   check('register 201', r.status === 201 && !!r.data.userId, r);
   const uid = r.data.userId;
 
-  r = await req('POST', '/api/users/login', { phone, password: '123456' });
+  r = await req('POST', '/api/users/login', { username, password: '123456' });
   check('login 200', r.status === 200 && r.data.userId === uid, r);
 
   r = await req('GET', '/api/users/' + uid);
@@ -197,7 +197,7 @@ async function req(method, path, body, token) {
   check('news delete 200', r.status === 200, r);
   r = await req('DELETE', '/api/admin/users/' + uid, undefined, token);
   check('cleanup CI user 200', r.status === 200, r);
-  r = await req('POST', '/api/users/login', { phone, password: '123456' });
+  r = await req('POST', '/api/users/login', { username, password: '123456' });
   check('deleted user login 401', r.status === 401, r);
 
   console.log(failures === 0 ? 'SMOKE PASS' : 'SMOKE FAIL: ' + failures);

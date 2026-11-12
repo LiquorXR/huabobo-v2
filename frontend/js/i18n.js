@@ -128,13 +128,13 @@
       login: {
         title: '登录',
         desc: '登录后可进入 3D 面塑 DIY 工作台（拖拽模型、数字人点评、模型导出、AR 融合）。',
-        phone: '手机号', password: '密码', phonePh: '请输入手机号', passPh: '请输入密码', submit: '登录',
+        username: '用户名', password: '密码', usernamePh: '请输入用户名', passPh: '请输入密码', submit: '登录',
         noAccount: '还没有账号？', goRegister: '去注册'
       },
       register: {
         title: '注册',
         desc: '注册仅将账号写入数据库，不会生成任何静态网页；登录后通过统一主页模板展示您的 DIY 作品集。',
-        nick: '昵称', phone: '手机号', password: '密码', nickPh: '请输入昵称', phonePh: '请输入手机号', passPh: '请设置密码', submit: '注册',
+        nick: '昵称', username: '用户名', password: '密码', nickPh: '请输入昵称', usernamePh: '请输入用户名', passPh: '请设置密码', submit: '注册',
         hasAccount: '已有账号？', goLogin: '去登录'
       },
       profile: {
@@ -276,13 +276,13 @@
       login: {
         title: 'Log in',
         desc: 'Access the 3D DIY studio—drag models, digital-human review, export, AR fusion.',
-        phone: 'Phone', password: 'Password', phonePh: 'Phone number', passPh: 'Password', submit: 'Log in',
+        username: 'Username', password: 'Password', usernamePh: 'Username', passPh: 'Password', submit: 'Log in',
         noAccount: 'No account yet?', goRegister: 'Sign up'
       },
       register: {
         title: 'Sign up',
         desc: 'Account is stored in the database only—no static pages generated. Your portfolio uses one profile template.',
-        nick: 'Nickname', phone: 'Phone', password: 'Password', nickPh: 'Nickname', phonePh: 'Phone number', passPh: 'Set password', submit: 'Sign up',
+        nick: 'Nickname', username: 'Username', password: 'Password', nickPh: 'Nickname', usernamePh: 'Username', passPh: 'Set password', submit: 'Sign up',
         hasAccount: 'Have an account?', goLogin: 'Log in'
       },
       profile: {
@@ -509,9 +509,9 @@
     login: [
       ['.section-title', 'login.title'],
       ['.section-desc', 'login.desc'],
-      ['#login-form label:nth-child(1) span', 'login.phone'],
+      ['#login-form label:nth-child(1) span', 'login.username'],
       ['#login-form label:nth-child(2) span', 'login.password'],
-      ['#login-form input[name="phone"]', 'login.phonePh', 'placeholder'],
+      ['#login-form input[name="username"]', 'login.usernamePh', 'placeholder'],
       ['#login-form input[name="password"]', 'login.passPh', 'placeholder'],
       ['#login-form button', 'login.submit']
     ],
@@ -519,10 +519,10 @@
       ['.section-title', 'register.title'],
       ['.section-desc', 'register.desc'],
       ['#register-form label:nth-child(1) span', 'register.nick'],
-      ['#register-form label:nth-child(2) span', 'register.phone'],
+      ['#register-form label:nth-child(2) span', 'register.username'],
       ['#register-form label:nth-child(3) span', 'register.password'],
       ['#register-form input[name="nickname"]', 'register.nickPh', 'placeholder'],
-      ['#register-form input[name="phone"]', 'register.phonePh', 'placeholder'],
+      ['#register-form input[name="username"]', 'register.usernamePh', 'placeholder'],
       ['#register-form input[name="password"]', 'register.passPh', 'placeholder'],
       ['#register-form button', 'register.submit']
     ]

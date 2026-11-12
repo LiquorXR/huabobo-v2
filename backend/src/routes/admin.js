@@ -90,7 +90,7 @@ router.get(
           createdAt: comments.createdAt,
           authorId: users.id,
           authorName: users.nickname,
-          authorPhone: users.phone,
+          username: users.username,
           workId: works.id,
           workTitle: works.title
         })
@@ -111,7 +111,7 @@ router.get(
         workTitle: c.workTitle || '',
         userId: c.authorId || '',
         userName: c.authorName || '',
-        userPhone: c.authorPhone || '',
+        username: c.username || '',
         text: c.text,
         createdAt: formatDateTime(c.createdAt)
       };

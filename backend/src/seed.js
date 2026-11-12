@@ -17,14 +17,14 @@ async function seed() {
   const result = await ensureSeedContent();
   console.log('[seed] 新闻条数:', result.newsCount, '合作艺人:', result.artisanCount);
 
-  const demoPhone = '13800000001';
-  let userRows = await dbm.db.select().from(users).where(eq(users.phone, demoPhone)).limit(1);
+  const demoName = 'demo';
+  let userRows = await dbm.db.select().from(users).where(eq(users.username, demoName)).limit(1);
   let user = userRows[0];
   if (!user) {
     const now = nowMs();
     user = {
       id: newId(),
-      phone: demoPhone,
+      username: demoName,
       passwordHash: await bcrypt.hash('123456', 10),
       nickname: '演示用户',
       handle: '@演示用户',
@@ -36,7 +36,7 @@ async function seed() {
       updatedAt: now
     };
     await dbm.db.insert(users).values(user);
-    console.log('[seed] 创建演示用户', demoPhone, '/ 123456');
+    console.log('[seed] 创建演示用户 demo / 123456');
   }
 
   const workCountRows = await dbm.db.select({ n: sql`count(*)`.mapWith(Number) }).from(works);

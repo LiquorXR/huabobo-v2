@@ -137,8 +137,8 @@ Authorization: Bearer <token>
 
 | 方法 | 完整地址 | 说明 |
 |------|----------|------|
-| POST | `http://8.160.184.132:3000/api/users/register` | 注册 `{ phone, password, nickname }` |
-| POST | `http://8.160.184.132:3000/api/users/login` | 登录 `{ phone, password }` |
+| POST | `http://8.160.184.132:3000/api/users/register` | 注册 `{ username, password, nickname }`（用户名 2-20 字） |
+| POST | `http://8.160.184.132:3000/api/users/login` | 登录 `{ username, password }` |
 | GET | `http://8.160.184.132:3000/api/users/:id` | 用户公开资料 |
 | PATCH / POST | `http://8.160.184.132:3000/api/users/:id/profile` | 修改昵称 `{ nickname }` |
 | POST | `http://8.160.184.132:3000/api/users/:id/avatar` | 上传头像，`multipart` 字段 `avatar` |

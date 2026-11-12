@@ -29,8 +29,8 @@
     btn.setAttribute('data-loading', loadingLabel);
   }
 
-  function normalizePhone(raw) {
-    return String(raw || '').trim().replace(/\s/g, '');
+  function normalizeUsername(raw) {
+    return String(raw || '').trim().replace(/\s+/g, '');
   }
 
   function afterAuthSuccess(userId, isRegister) {
@@ -55,10 +55,10 @@
         return;
       }
       var fd = new FormData(registerForm);
-      var phone = normalizePhone(fd.get('phone'));
+      var username = normalizeUsername(fd.get('username'));
       var password = fd.get('password');
-      if (!/^1\d{10}$/.test(phone)) {
-        showError('请输入正确的 11 位手机号（1 开头）');
+      if (username.length < 2 || username.length > 20) {
+        showError('用户名需为 2-20 个字符');
         return;
       }
       if (!password || String(password).length < 6) {
@@ -68,7 +68,7 @@
       setSubmitting(registerForm, true);
       Api.registerUser({
         nickname: fd.get('nickname'),
-        phone: phone,
+        username: username,
         password: password
       })
         .then(function (res) {
@@ -98,10 +98,10 @@
         return;
       }
       var fd = new FormData(loginForm);
-      var phone = normalizePhone(fd.get('phone'));
+      var username = normalizeUsername(fd.get('username'));
       var password = fd.get('password');
-      if (!/^1\d{10}$/.test(phone)) {
-        showError('请输入正确的 11 位手机号（1 开头）');
+      if (!username) {
+        showError('请输入用户名');
         return;
       }
       if (!password) {
@@ -109,7 +109,7 @@
         return;
       }
       setSubmitting(loginForm, true);
-      Api.login(phone, password)
+      Api.login(username, password)
         .then(function (res) {
           if (res.ok && res.userId) {
             sessionStorage.setItem('zhijiansu_user_id', res.userId);

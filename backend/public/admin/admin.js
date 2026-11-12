@@ -1088,14 +1088,14 @@
           return;
         }
         wrap.innerHTML =
-          '<table class="data-table"><thead><tr><th>昵称</th><th>手机号</th><th>注册时间</th><th>操作</th></tr></thead><tbody>' +
+          '<table class="data-table"><thead><tr><th>昵称</th><th>用户名</th><th>注册时间</th><th>操作</th></tr></thead><tbody>' +
           list
             .map(function (u) {
               return (
                 '<tr><td>' +
                 escapeHtml(u.nickname) +
                 '</td><td>' +
-                escapeHtml(u.phone) +
+                escapeHtml(u.username) +
                 '</td><td>' +
                 escapeHtml(u.createdAt) +
                 '</td><td class="cell-actions"><div class="table-actions">' +
@@ -1926,7 +1926,7 @@
               '</td><td>' +
               escapeHtml(c.userName) +
               '<br><small>' +
-              escapeHtml(c.userPhone) +
+              escapeHtml(c.username) +
               '</small></td><td>' +
               escapeHtml(c.text) +
               '</td><td>' +

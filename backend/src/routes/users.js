@@ -15,7 +15,7 @@ function mapUser(u) {
   if (!u) return null;
   return {
     id: u.id,
-    phone: u.phone,
+    username: u.username,
     nickname: u.nickname,
     handle: u.handle,
     avatar: publicUrl(u.avatar) || u.avatar,
@@ -37,22 +37,22 @@ router.post(
   '/register',
   requireDb,
   asyncHandler(async function (req, res) {
-    const { phone, password, nickname } = req.body || {};
-    if (!phone || !password) {
-      return res.status(400).json({ ok: false, message: '请填写手机号和密码' });
+    const { username, password, nickname } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ ok: false, message: '请填写用户名和密码' });
     }
-    const phoneStr = String(phone).trim();
-    if (!/^1\d{10}$/.test(phoneStr)) {
-      return res.status(400).json({ ok: false, message: '手机号格式不正确' });
+    const nameStr = String(username).trim();
+    if (nameStr.length < 2 || nameStr.length > 20) {
+      return res.status(400).json({ ok: false, message: '用户名需为 2-20 个字符' });
     }
     if (String(password).length < 6) {
       return res.status(400).json({ ok: false, message: '密码至少 6 位' });
     }
 
     const { users } = dbm.schema;
-    const exists = await dbm.db.select().from(users).where(eq(users.phone, phoneStr)).limit(1);
+    const exists = await dbm.db.select().from(users).where(eq(users.username, nameStr)).limit(1);
     if (exists.length) {
-      return res.status(409).json({ ok: false, message: '该手机号已注册' });
+      return res.status(409).json({ ok: false, message: '该用户名已注册' });
     }
 
     const nick = (nickname || '新用户').trim();
@@ -60,7 +60,7 @@ router.post(
     const now = nowMs();
     const row = {
       id: newId(),
-      phone: phoneStr,
+      username: nameStr,
       passwordHash: hash,
       nickname: nick,
       handle: '@' + nick,
@@ -82,15 +82,15 @@ router.post(
   '/login',
   requireDb,
   asyncHandler(async function (req, res) {
-    const { phone, password } = req.body || {};
-    if (!phone || !password) {
-      return res.status(400).json({ ok: false, message: '请填写手机号和密码' });
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ ok: false, message: '请填写用户名和密码' });
     }
     const { users } = dbm.schema;
     const rows = await dbm.db
       .select()
       .from(users)
-      .where(eq(users.phone, String(phone).trim()))
+      .where(eq(users.username, String(username).trim()))
       .limit(1);
     const user = rows[0];
     if (!user) {
@@ -188,7 +188,7 @@ admin.get(
     if (keyword) {
       const pattern = '%' + escapeLike(keyword.toLowerCase()) + '%';
       conds.push(
-        sql`(${sql`lower(${users.phone})`} LIKE ${pattern} ESCAPE '\\' OR ${sql`lower(${users.nickname})`} LIKE ${pattern} ESCAPE '\\')`
+        sql`(${sql`lower(${users.username})`} LIKE ${pattern} ESCAPE '\\' OR ${sql`lower(${users.nickname})`} LIKE ${pattern} ESCAPE '\\')`
       );
     }
     const where = conds.length ? and(...conds) : undefined;

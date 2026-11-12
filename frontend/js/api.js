@@ -632,7 +632,7 @@
         bio: '指间塑新成员，期待你的第一件 DIY 作品。',
         joinDate: new Date().toISOString().slice(0, 7),
         avatar: 'images/author-user-me.jpg',
-        phone: payload.phone,
+        username: payload.username,
         _password: payload.password
       };
       db.users.push(user);
@@ -640,11 +640,11 @@
       return delay({ ok: true, userId: id });
     },
 
-    login: function (phone, password) {
+    login: function (username, password) {
       var user = db.users.find(function (u) {
-        return u.phone === phone && (u._password === password || password === '123456');
+        return u.username === username && (u._password === password || password === '123456');
       });
-      if (!user && phone) {
+      if (!user && username) {
         user = db.users.find(function (u) { return u.id === 'u_me'; });
       }
       if (user) {

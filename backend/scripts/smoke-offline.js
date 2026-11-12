@@ -45,8 +45,8 @@ async function req(method, path, body) {
     ['GET', '/api/comments?workId=bad', undefined],
     ['GET', '/api/studio-model-categories', undefined],
     ['GET', '/api/about', undefined],
-    ['POST', '/api/users/register', { phone: '13800000000', password: '123456' }],
-    ['POST', '/api/users/login', { phone: '13800000000', password: '123456' }],
+    ['POST', '/api/users/register', { username: '13800000000', password: '123456' }],
+    ['POST', '/api/users/login', { username: '13800000000', password: '123456' }],
     ['POST', '/api/works', { userId: 'x', title: 'y' }],
     ['POST', '/api/comments', { workId: 'x', userId: 'y', text: 'z' }],
     ['GET', '/api/engagement?workIds=bad', undefined]

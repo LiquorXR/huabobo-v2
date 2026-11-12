@@ -61,11 +61,12 @@ async function main() {
   }
 
   // users
+  // users（旧库 phone 即登录名，原样迁入 username；现网用户用原手机号登录）
   for (const u of await dump('users')) {
     await upsert(schema.users, [
       {
         id: hex(u._id),
-        phone: str(u.phone),
+        username: str(u.username || u.phone),
         passwordHash: str(u.passwordHash),
         nickname: str(u.nickname, '新用户'),
         handle: str(u.handle, ''),

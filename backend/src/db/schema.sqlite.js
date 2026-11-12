@@ -6,7 +6,7 @@ const { sqliteTable, text, integer, uniqueIndex } = require('drizzle-orm/sqlite-
  */
 const users = sqliteTable('users', {
   id: text('id').primaryKey(),
-  phone: text('phone').notNull().unique(),
+  username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   nickname: text('nickname').notNull().default('新用户'),
   handle: text('handle').notNull().default(''),

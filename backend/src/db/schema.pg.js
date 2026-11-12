@@ -6,7 +6,7 @@ const { pgTable, text, integer, bigint, boolean, uniqueIndex } = require('drizzl
  */
 const users = pgTable('users', {
   id: text('id').primaryKey(),
-  phone: text('phone').notNull().unique(),
+  username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   nickname: text('nickname').notNull().default('新用户'),
   handle: text('handle').notNull().default(''),

@@ -11,7 +11,7 @@ function errorHandler(err, req, res, _next) {
     err.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
     (err.message && err.message.indexOf('UNIQUE constraint failed') >= 0)
   ) {
-    return res.status(409).json({ ok: false, message: '数据已存在（如手机号重复）' });
+    return res.status(409).json({ ok: false, message: '数据已存在（如用户名重复）' });
   }
   if (err.message && (err.message.indexOf('仅支持图片') >= 0 || err.code === 'LIMIT_FILE_SIZE')) {
     return res.status(400).json({ ok: false, message: err.message || '文件过大或格式不正确' });

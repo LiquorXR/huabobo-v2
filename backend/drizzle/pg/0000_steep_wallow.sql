@@ -1,6 +1,6 @@
 CREATE TABLE "users" (
 	"id" text PRIMARY KEY NOT NULL,
-	"phone" text NOT NULL,
+	"username" text NOT NULL,
 	"password_hash" text NOT NULL,
 	"nickname" text DEFAULT '新用户' NOT NULL,
 	"handle" text DEFAULT '' NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE "users" (
 	"join_date" text DEFAULT '' NOT NULL,
 	"created_at" bigint NOT NULL,
 	"updated_at" bigint NOT NULL,
-	CONSTRAINT "users_phone_unique" UNIQUE("phone")
+	CONSTRAINT "users_username_unique" UNIQUE("username")
 );
 --> statement-breakpoint
 CREATE TABLE "works" (

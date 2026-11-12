@@ -97,7 +97,7 @@
       avatar: u.avatar || 'images/author-user-me.jpg',
       bio: u.bio || '',
       joinDate: u.joinDate || '',
-      phone: u.phone || ''
+      username: u.username || ''
     };
   }
 
@@ -124,7 +124,7 @@
     return http('/api/users/register', {
       method: 'POST',
       json: {
-        phone: payload.phone,
+        username: payload.username,
         password: payload.password,
         nickname: payload.nickname
       }
@@ -139,10 +139,10 @@
     });
   };
 
-  Api.login = function (phone, password) {
+  Api.login = function (username, password) {
     return http('/api/users/login', {
       method: 'POST',
-      json: { phone: phone, password: password }
+      json: { username: username, password: password }
     }).then(function (res) {
       if (res.ok && res.userId) {
         sessionStorage.setItem('zhijiansu_user_id', res.userId);

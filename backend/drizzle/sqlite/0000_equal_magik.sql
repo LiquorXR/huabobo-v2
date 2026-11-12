@@ -1,6 +1,6 @@
 CREATE TABLE `users` (
 	`id` text PRIMARY KEY NOT NULL,
-	`phone` text NOT NULL,
+	`username` text NOT NULL,
 	`password_hash` text NOT NULL,
 	`nickname` text DEFAULT '新用户' NOT NULL,
 	`handle` text DEFAULT '' NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE `users` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `users_phone_unique` ON `users` (`phone`);--> statement-breakpoint
+CREATE UNIQUE INDEX `users_username_unique` ON `users` (`username`);--> statement-breakpoint
 CREATE TABLE `works` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
