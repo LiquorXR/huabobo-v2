@@ -56,7 +56,7 @@
       '<p class="work-detail-desc">' + ZJS.escapeHtml(work.desc) + '</p>' +
       '<div class="work-custom-box"><h3>选择合作手艺人定制</h3><p>以下手艺人均可承接实物定制，请点击选择。</p>' +
       '<div class="artisan-pick-list">' + pickHtml + '</div>' +
-      '<a href="about.html" class="btn btn-outline" style="width:100%;justify-content:center;margin-top:12px;">联系指间塑统筹定制</a></div>' +
+      '<a href="index.html#about" class="btn btn-outline" style="width:100%;justify-content:center;margin-top:12px;">联系指间塑统筹定制</a></div>' +
       '<a href="gallery.html" class="btn btn-outline" style="width:100%;justify-content:center;">← 返回展厅</a>' +
       '</aside></div>';
 

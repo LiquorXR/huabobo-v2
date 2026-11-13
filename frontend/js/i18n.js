@@ -307,9 +307,6 @@
     'digital.html': 'nav.digital',
     'gallery.html': 'nav.gallery',
     'artisans.html': 'nav.artisans',
-    'charity.html': 'nav.charity',
-    'news.html': 'nav.news',
-    'about.html': 'nav.about',
     'huayang.html': 'nav.huayang'
   };
 
