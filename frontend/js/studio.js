@@ -2836,6 +2836,8 @@ function startHumanSession() {
   stopRealReviewCamera();
   clearRealFreeze();
   setHumanActions('greeting');
+  // 问候语也要走 TTS 合成：先挂思考动画，出声时自动切换说话态
+  setHumanThinking(true);
   setHumanSpeech(HUMAN_GREETING, true, function () {
     if (humanPhase === 'idle') return;
     setHumanActions('choose');
