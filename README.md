@@ -61,11 +61,10 @@ docker compose ps                   # 三个容器都 Up 才算正常
 不填也能用（会自动降级为浏览器发音 + 本地规则）。需要时在 `.env` 里追加后重启即可：
 
 ```bash
-# DOUBAO_TTS_API_KEY=火山引擎控制台复制的 Key
-# DOUBAO_TTS_SPEAKER=音色库里选定的 speaker ID
-# ARK_API_KEY=sk-开头，方舟控制台创建
-# ARK_VISION_MODEL=方舟模型广场选的识图模型 ID
-# ARK_TEXT_MODEL=方舟模型广场选的文本模型 ID
+# OPENAI_API_KEY=sk-开头，任一 OpenAI 兼容站
+# OPENAI_BASE_URL=服务商 Base URL（如智谱 https://open.bigmodel.cn/api/paas/v4）
+# OPENAI_VISION_MODEL=识图模型 ID
+# OPENAI_TEXT_MODEL=文本模型 ID
 docker compose up -d --build
 ```
 

@@ -49,7 +49,18 @@ admin.get(
   asyncHandler(async function (req, res) {
     const { printOrders } = dbm.schema;
     const items = await dbm.db.select().from(printOrders).orderBy(desc(printOrders.createdAt)).limit(100);
-    res.json({ ok: true, data: { list: items } });
+    const { formatDateTime } = require('../utils/url');
+    res.json({
+      ok: true,
+      data: {
+        list: items.map(function (o) {
+          return Object.assign({}, o, {
+            createdAt: formatDateTime(o.createdAt),
+            updatedAt: formatDateTime(o.updatedAt)
+          });
+        })
+      }
+    });
   })
 );
 

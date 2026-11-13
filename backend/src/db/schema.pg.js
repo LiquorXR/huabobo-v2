@@ -1,4 +1,4 @@
-const { pgTable, text, integer, bigint, boolean, uniqueIndex } = require('drizzle-orm/pg-core');
+const { pgTable, text, integer, bigint, boolean, uniqueIndex, index } = require('drizzle-orm/pg-core');
 
 /** PostgreSQL schema. JS keys are camelCase, DB columns snake_case.
  *  IDs are TEXT primary keys (legacy ObjectId hex strings are kept as-is).
@@ -33,7 +33,7 @@ const works = pgTable('works', {
   studio: text('studio').notNull().default(''),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
-});
+}, (t) => [index('works_status_published_idx').on(t.status, t.publishedAt)]);
 
 const comments = pgTable('comments', {
   id: text('id').primaryKey(),
@@ -110,7 +110,7 @@ const studioModels = pgTable('studio_models', {
   enabled: boolean('enabled').notNull().default(true),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
-});
+}, (t) => [index('studio_models_enabled_idx').on(t.enabled)]);
 
 const aboutPages = pgTable('about_pages', {
   id: text('id').primaryKey(),

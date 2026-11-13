@@ -1,4 +1,4 @@
-const { sqliteTable, text, integer, uniqueIndex } = require('drizzle-orm/sqlite-core');
+const { sqliteTable, text, integer, uniqueIndex, index } = require('drizzle-orm/sqlite-core');
 
 /** SQLite schema. Mirrors schema.pg.js exactly (same tables/columns/keys).
  *  Timestamps are INTEGER millis. JSON-ish fields are TEXT (app serializes).
@@ -33,7 +33,7 @@ const works = sqliteTable('works', {
   studio: text('studio').notNull().default(''),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull()
-});
+}, (t) => [index('works_status_published_idx').on(t.status, t.publishedAt)]);
 
 const comments = sqliteTable('comments', {
   id: text('id').primaryKey(),
@@ -110,7 +110,7 @@ const studioModels = sqliteTable('studio_models', {
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull()
-});
+}, (t) => [index('studio_models_enabled_idx').on(t.enabled)]);
 
 const aboutPages = sqliteTable('about_pages', {
   id: text('id').primaryKey(),

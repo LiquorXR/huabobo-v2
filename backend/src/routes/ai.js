@@ -3,13 +3,12 @@ const crypto = require('crypto');
 const asyncHandler = require('../utils/asyncHandler');
 
 /**
- * 数字人 AI 链路（OpenAI 兼容接口；密钥只在服务端）
- * 优先级：ZHIPU_API_KEY（单 Key 通吃识图+文案+语音；视觉模型本身多模态，识图和点评可共用同一个）
- * 兼容老配置：ARK_API_KEY + ARK_VISION_MODEL + ARK_TEXT_MODEL（火山方舟）
+ * 数字人 AI 链路（统一 OpenAI 兼容接口；密钥只在服务端）
+ * 优先级：OPENAI_*（任一 OpenAI 兼容站）> ZHIPU_*（别名）> ARK_*（别名，火山方舟）
  * - POST /api/vision/identify  Body: { image: dataURL(jpeg/png) }
- *   → { ok:true, data:{ motif, craft, light } }（motif 为 8 个造型 id 之一）
- * - POST /api/review/text      Body: { context: { kind, motifs[], craft, light, extra? } }
- *   → { ok:true, data:{ text } }（可直接朗读的口播稿）
+ *   → { ok:true, data:{ motif, confidence, top2, craft, light, suggestRetake } }
+ * - POST /api/review/text      Body: { context: { kind, motifs[], craft, light, title?, extra? } }
+ *   → { ok:true, data:{ text } }
  * 任一环节失败返回非 ok，前端自动回退本地规则 + 本地话术。
  */
 const router = express.Router();
@@ -31,26 +30,64 @@ setInterval(function () {
   });
 }, 60 * 1000).unref();
 
-function llmCfg() {
-  // 单 Key 优先：ZHIPU_API_KEY 一个 key 通吃识图+文案+语音
-  // 兼容老配置：ARK_*（火山方舟双 Key 方案）
-  if (process.env.ZHIPU_API_KEY) {
-    return {
-      provider: 'zhipu',
-      apiKey: process.env.ZHIPU_API_KEY || '',
-      baseUrl: (process.env.ZHIPU_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4').replace(/\/$/, ''),
-      visionModel: process.env.ZHIPU_VISION_MODEL || process.env.ARK_VISION_MODEL || 'glm-5.3-flash',
-      textModel: process.env.ZHIPU_TEXT_MODEL || process.env.ZHIPU_VISION_MODEL || process.env.ARK_TEXT_MODEL || 'glm-5.3-flash',
-      // glm-5.x 为强制思考的推理模型；low 档省 token 且经实测有效，老模型若报 400 会自动降级去掉该参数
-      reasoningEffort: process.env.ZHIPU_REASONING_EFFORT || 'low'
-    };
+// 识图结果缓存：同图二次识别零 token（内存 LRU，上限 500 条）
+const visionCache = new Map();
+const VISION_CACHE_MAX = 500;
+function visionCacheKey(image) {
+  return crypto.createHash('sha256').update(String(image)).digest('hex');
+}
+function visionCacheGet(key) {
+  const hit = visionCache.get(key);
+  if (!hit) return null;
+  visionCache.delete(key);
+  visionCache.set(key, hit);
+  return hit;
+}
+function visionCacheSet(key, value) {
+  if (visionCache.has(key)) visionCache.delete(key);
+  visionCache.set(key, value);
+  while (visionCache.size > VISION_CACHE_MAX) {
+    const oldest = visionCache.keys().next().value;
+    visionCache.delete(oldest);
   }
+}
+
+function llmCfg() {
+  // 统一 OpenAI 格式：OPENAI_* 优先，ZHIPU_*/ARK_* 作兼容别名
+  const hasAnyKey = process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY;
+  if (!hasAnyKey) {
+    return { provider: 'none', apiKey: '', baseUrl: '', visionModel: '', textModel: '', reasoningEffort: '' };
+  }
+  const useOpenai = !!process.env.OPENAI_API_KEY;
+  const useZhipu = !useOpenai && !!process.env.ZHIPU_API_KEY;
   return {
-    provider: 'ark',
-    apiKey: process.env.ARK_API_KEY || '',
-    baseUrl: (process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, ''),
-    visionModel: process.env.ARK_VISION_MODEL || '',
-    textModel: process.env.ARK_TEXT_MODEL || ''
+    provider: useOpenai ? 'openai' : useZhipu ? 'zhipu' : 'ark',
+    apiKey: process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY || '',
+    baseUrl: (
+      process.env.OPENAI_BASE_URL ||
+      process.env.ZHIPU_BASE_URL ||
+      process.env.ARK_BASE_URL ||
+      'https://open.bigmodel.cn/api/paas/v4'
+    ).replace(/\/$/, ''),
+    visionModel:
+      process.env.OPENAI_VISION_MODEL ||
+      process.env.ZHIPU_VISION_MODEL ||
+      process.env.ARK_VISION_MODEL ||
+      process.env.OPENAI_TEXT_MODEL ||
+      process.env.ZHIPU_TEXT_MODEL ||
+      process.env.ARK_TEXT_MODEL ||
+      (useOpenai ? '' : 'glm-5.3-flash'),
+    textModel:
+      process.env.OPENAI_TEXT_MODEL ||
+      process.env.ZHIPU_TEXT_MODEL ||
+      process.env.ZHIPU_VISION_MODEL ||
+      process.env.ARK_TEXT_MODEL ||
+      process.env.OPENAI_VISION_MODEL ||
+      process.env.ARK_VISION_MODEL ||
+      (useOpenai ? '' : 'glm-5.3-flash'),
+    // 推理档位为扩展字段：是否透传不看 provider，老模型不支持会自动降级去掉
+    reasoningEffort:
+      process.env.OPENAI_REASONING_EFFORT || process.env.ZHIPU_REASONING_EFFORT || ''
   };
 }
 
@@ -94,7 +131,7 @@ async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
         temperature: temperature
       };
       if (useJsonFormat) body.response_format = { type: 'json_object' };
-      if (useReasoning && cfg.provider === 'zhipu' && cfg.reasoningEffort) {
+      if (useReasoning && cfg.reasoningEffort) {
         body.reasoning_effort = cfg.reasoningEffort;
       }
       const res = await fetch(cfg.baseUrl + '/chat/completions', {
@@ -147,7 +184,7 @@ async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
 
   let res = await post(wantJson, true);
   // 400 降级重试：response_format 或 reasoning_effort 不被模型支持时去掉对应参数再试一次
-  if (!res.ok && res.status === 400 && cfg.provider === 'zhipu') {
+  if (!res.ok && res.status === 400) {
     let peek = '';
     try {
       peek = await res.clone().text();
@@ -187,6 +224,12 @@ router.post(
     if (!/^data:image\/(jpeg|png);base64,/i.test(image)) {
       return res.status(400).json({ ok: false, message: '仅支持 jpeg/png 图片' });
     }
+    // 缓存命中直接返回，不计限流、不调上游
+    const cacheKey = visionCacheKey(image);
+    const cached = visionCacheGet(cacheKey);
+    if (cached) {
+      return res.json({ ok: true, data: Object.assign({ cached: true }, cached) });
+    }
     if (!throttle(req, res, 'vision')) return;
     const cfg = arkCfg();
     if (!cfg.apiKey || !cfg.visionModel) {
@@ -224,16 +267,18 @@ router.post(
     var craft = CRAFTS.indexOf(parsed.craft) >= 0 ? parsed.craft : 'ok';
     var light = LIGHTS.indexOf(parsed.light) >= 0 ? parsed.light : 'good';
     var suggestRetake = parsed.motif === 'unknown' || confidence < 0.55 || (craft === 'soft' && light !== 'good');
+    var result = {
+      motif: parsed.motif,
+      confidence: Math.round(confidence * 100) / 100,
+      top2: top2,
+      craft: craft,
+      light: light,
+      suggestRetake: !!suggestRetake
+    };
+    visionCacheSet(cacheKey, result);
     res.json({
       ok: true,
-      data: {
-        motif: parsed.motif,
-        confidence: Math.round(confidence * 100) / 100,
-        top2: top2,
-        craft: craft,
-        light: light,
-        suggestRetake: !!suggestRetake
-      }
+      data: result
     });
   })
 );

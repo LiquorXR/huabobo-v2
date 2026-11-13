@@ -40,12 +40,28 @@
     }
   ];
 
+  function picHtml(url, alt) {
+    if (url && url.indexOf('images/') === 0 && /\.jpg$/i.test(url)) {
+      var webp = url.replace(/\.jpg$/i, '.webp');
+      return (
+        '<picture><source srcset="' +
+        esc(webp) +
+        '" type="image/webp"><img src="' +
+        esc(url) +
+        '" alt="' +
+        esc(alt || '') +
+        '" loading="lazy" decoding="async"></picture>'
+      );
+    }
+    return '<img src="' + esc(url) + '" alt="' + esc(alt || '') + '" loading="lazy" decoding="async">';
+  }
+
   function renderNewsItem(n) {
     var img = n.image || 'images/news-1.jpg';
     var body =
-      '<div class="news-thumb"><img src="' +
-      esc(img) +
-      '" alt="" loading="lazy" decoding="async"></div>' +
+      '<div class="news-thumb">' +
+      picHtml(img, '') +
+      '</div>' +
       '<div class="news-body"><time class="news-date">' +
       esc(n.publishedAt || '') +
       '</time><h3>' +
@@ -152,9 +168,24 @@
       } else {
         printGrid.innerHTML = works
           .map(function (w) {
+            var thumb = '';
+            if (w.image) {
+              if (w.image.indexOf('images/') === 0 && /\.jpg$/i.test(w.image)) {
+                thumb =
+                  '<picture><source srcset="' +
+                  esc(w.image.replace(/\.jpg$/i, '.webp')) +
+                  '" type="image/webp"><img src="' +
+                  esc(w.image) +
+                  '" alt="' +
+                  esc(w.title) +
+                  '" loading="lazy"></picture>';
+              } else {
+                thumb = '<img src="' + esc(w.image) + '" alt="' + esc(w.title) + '" loading="lazy">';
+              }
+            }
             return (
               '<article class="about-print-card">' +
-              (w.image ? '<img src="' + esc(w.image) + '" alt="' + esc(w.title) + '" loading="lazy">' : '') +
+              thumb +
               '<h3>' +
               esc(w.title) +
               '</h3><p>' +

@@ -113,7 +113,7 @@ async function req(method, path, body, token) {
 
   r = await req('POST', '/api/tts/speak', { text: '' });
   check('tts empty text 400', r.status === 400, r);
-  if (!process.env.DOUBAO_TTS_API_KEY) {
+  if (!process.env.OPENAI_API_KEY && !process.env.ZHIPU_API_KEY) {
     r = await req('POST', '/api/tts/speak', { text: '你好' });
     check('tts unconfigured 503', r.status === 503, r);
   }
@@ -122,7 +122,7 @@ async function req(method, path, body, token) {
   check('vision bad image 400', r.status === 400, r);
   r = await req('POST', '/api/review/text', { context: 'not-an-object' });
   check('review bad context 400', r.status === 400, r);
-  if (!process.env.ARK_API_KEY) {
+  if (!process.env.OPENAI_API_KEY && !process.env.ZHIPU_API_KEY && !process.env.ARK_API_KEY) {
     r = await req('POST', '/api/vision/identify', { image: 'data:image/jpeg;base64,/9j/' });
     check('vision unconfigured 503', r.status === 503, r);
     r = await req('POST', '/api/review/text', { context: { kind: 'real', motifs: ['tao'] } });
@@ -230,6 +230,23 @@ async function req(method, path, body, token) {
   check('work cover path', !!(r.data.data && r.data.data.image.indexOf('/uploads/') >= 0), r.data);
   r = await req('DELETE', '/api/works/' + wid2, undefined, utoken);
   check('delete cover work 200', r.status === 200, r);
+
+  const studioSnap = { color: 123, instances: [{ modelId: 'round', color: 1, offset: { x: 0.1, y: 0, z: 0 }, scale: 1, rotation: { x: 0, y: 0, z: 0 } }] };
+  r = await req('POST', '/api/works', { title: 'CI-studio', publish: false, studio: studioSnap }, utoken);
+  check('work studio save 201', r.status === 201 && !!(r.data.data && r.data.data.id), r);
+  const swid = r.data.data && r.data.data.id;
+  r = await req('GET', '/api/works/' + swid, undefined, utoken);
+  check('work studio owner sees snapshot', r.status === 200 && !!(r.data.data && r.data.data.studio), r.data.data);
+  r = await req('GET', '/api/works/' + swid);
+  check('work studio hidden for guests', r.status === 200 && !(r.data.data && r.data.data.studio), r.data.data);
+  await req('DELETE', '/api/works/' + swid, undefined, utoken);
+
+  r = await req('POST', '/api/print-orders', { contact: '13800000000', note: 'smoke' }, utoken);
+  check('print order 201', r.status === 201 && !!(r.data.data && r.data.data.id), r);
+  r = await req('POST', '/api/print-orders', {}, utoken);
+  check('print order no contact 400', r.status === 400, r);
+  r = await req('GET', '/api/admin/print-orders', undefined, token);
+  check('print orders admin 200', r.status === 200 && !!(r.data.data && Array.isArray(r.data.data.list)), r.data);
 
   r = await req('DELETE', '/api/admin/studio-models/' + mid, undefined, token);
   check('model delete 200', r.status === 200, r);

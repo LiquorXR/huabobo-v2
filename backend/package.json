@@ -10,6 +10,7 @@
     "seed": "node src/seed.js",
     "import:models": "node scripts/import-models.js",
     "db:generate": "drizzle-kit generate --config=drizzle.pg.config.js && drizzle-kit generate --config=drizzle.sqlite.config.js",
+    "optimize:models": "node scripts/optimize-models.js",
     "build:admin-thumb": "node_modules/esbuild/bin/esbuild scripts/admin-thumb-entry.mjs --bundle --format=iife --global-name=AdminModelThumbBundle --outfile=public/admin/vendor/admin-thumb.bundle.js --platform=browser --target=es2018",
     "postinstall": "node -e \"console.log('[ok] 依赖安装完成，可执行 npm start')\""
   },
@@ -30,6 +31,7 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.5.1",
     "drizzle-kit": "^0.31.11"
   }
 }

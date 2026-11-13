@@ -6,18 +6,6 @@
   <title>面塑 DIY 工作台 — 指间塑</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/studio.css?v=20261029">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: { DEFAULT: '#c41e3a', dark: '#9e1830' }
-          }
-        }
-      }
-    };
-  </script>
 </head>
 <body class="studio-page">
 
@@ -327,13 +315,13 @@
     </button>
   </div>
 
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+  <script src="vendor/lucide.min.js"></script>
+  <script async src="vendor/es-module-shims.js"></script>
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
     }
   }
   </script>

@@ -15,6 +15,11 @@
   var interval = 6000;
 
   function lazyLoadSlide(slide) {
+    var sources = slide.querySelectorAll('source[data-srcset]');
+    sources.forEach(function (s) {
+      s.srcset = s.getAttribute('data-srcset');
+      s.removeAttribute('data-srcset');
+    });
     var img = slide.querySelector('img[data-src]');
     if (!img) return;
     img.src = img.getAttribute('data-src');

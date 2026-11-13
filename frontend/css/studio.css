@@ -1007,6 +1007,8 @@
   cursor: not-allowed;
 }
 
+.min-w-0 { min-width: 0; }
+
 .studio-model-card__thumb {
   width: 84px;
   height: 84px;
