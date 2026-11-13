@@ -63,8 +63,8 @@ docker compose ps                   # 三个容器都 Up 才算正常
 ```bash
 # OPENAI_API_KEY=sk-开头，任一 OpenAI 兼容站
 # OPENAI_BASE_URL=服务商 Base URL（如智谱 https://open.bigmodel.cn/api/paas/v4）
-# OPENAI_VISION_MODEL=识图模型 ID
-# OPENAI_TEXT_MODEL=文本模型 ID
+# OPENAI_MODEL=识图点评共用模型（如 glm-5.3-flash）
+# OPENAI_THINKING=思考开关（enabled/low/留空关闭）
 docker compose up -d --build
 ```
 

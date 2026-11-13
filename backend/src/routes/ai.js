@@ -4,7 +4,9 @@ const asyncHandler = require('../utils/asyncHandler');
 
 /**
  * 数字人 AI 链路（统一 OpenAI 兼容接口；密钥只在服务端）
- * 优先级：OPENAI_*（任一 OpenAI 兼容站）> ZHIPU_*（别名）> ARK_*（别名，火山方舟）
+ * 单模型：OPENAI_MODEL 识图点评共用（VISION/TEXT 作兼容别名）
+ * 思考开关：OPENAI_THINKING=enabled（thinking 对象，4.6v 系）/ low 等档位（reasoning_effort，5.x 系）/ 留空关闭
+ * 降级链（400 时逐级去掉）：reasoning_effort → thinking 对象 → response_format
  * - POST /api/vision/identify  Body: { image: dataURL(jpeg/png) }
  *   → { ok:true, data:{ motif, confidence, top2, craft, light, suggestRetake } }
  * - POST /api/review/text      Body: { context: { kind, motifs[], craft, light, title?, extra? } }
@@ -54,12 +56,26 @@ function visionCacheSet(key, value) {
 
 function llmCfg() {
   // 统一 OpenAI 格式：OPENAI_* 优先，ZHIPU_*/ARK_* 作兼容别名
+  // 单模型：OPENAI_MODEL 识图点评共用；VISION/TEXT 仅作兼容别名
   const hasAnyKey = process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY;
   if (!hasAnyKey) {
-    return { provider: 'none', apiKey: '', baseUrl: '', visionModel: '', textModel: '', reasoningEffort: '' };
+    return { provider: 'none', apiKey: '', baseUrl: '', visionModel: '', textModel: '', reasoningEffort: '', thinking: '' };
   }
   const useOpenai = !!process.env.OPENAI_API_KEY;
   const useZhipu = !useOpenai && !!process.env.ZHIPU_API_KEY;
+  const singleModel =
+    process.env.OPENAI_MODEL ||
+    process.env.OPENAI_VISION_MODEL ||
+    process.env.OPENAI_TEXT_MODEL ||
+    process.env.ZHIPU_VISION_MODEL ||
+    process.env.ZHIPU_TEXT_MODEL ||
+    process.env.ARK_VISION_MODEL ||
+    process.env.ARK_TEXT_MODEL ||
+    (useZhipu ? 'glm-5.3-flash' : '');
+  // 思考开关：enabled → thinking 对象（4.6v 系）；low 等档位 → reasoning_effort（5.x 系）；留空关闭
+  const thinkingRaw = String(
+    process.env.OPENAI_THINKING || process.env.OPENAI_REASONING_EFFORT || process.env.ZHIPU_REASONING_EFFORT || ''
+  ).trim();
   return {
     provider: useOpenai ? 'openai' : useZhipu ? 'zhipu' : 'ark',
     apiKey: process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY || '',
@@ -69,25 +85,10 @@ function llmCfg() {
       process.env.ARK_BASE_URL ||
       'https://open.bigmodel.cn/api/paas/v4'
     ).replace(/\/$/, ''),
-    visionModel:
-      process.env.OPENAI_VISION_MODEL ||
-      process.env.ZHIPU_VISION_MODEL ||
-      process.env.ARK_VISION_MODEL ||
-      process.env.OPENAI_TEXT_MODEL ||
-      process.env.ZHIPU_TEXT_MODEL ||
-      process.env.ARK_TEXT_MODEL ||
-      (useOpenai ? '' : 'glm-5.3-flash'),
-    textModel:
-      process.env.OPENAI_TEXT_MODEL ||
-      process.env.ZHIPU_TEXT_MODEL ||
-      process.env.ZHIPU_VISION_MODEL ||
-      process.env.ARK_TEXT_MODEL ||
-      process.env.OPENAI_VISION_MODEL ||
-      process.env.ARK_VISION_MODEL ||
-      (useOpenai ? '' : 'glm-5.3-flash'),
-    // 推理档位为扩展字段：是否透传不看 provider，老模型不支持会自动降级去掉
-    reasoningEffort:
-      process.env.OPENAI_REASONING_EFFORT || process.env.ZHIPU_REASONING_EFFORT || ''
+    visionModel: singleModel,
+    textModel: singleModel,
+    reasoningEffort: thinkingRaw && thinkingRaw !== 'enabled' ? thinkingRaw : '',
+    thinking: thinkingRaw === 'enabled' ? 'enabled' : ''
   };
 }
 
@@ -118,7 +119,7 @@ async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
   const wantJson = !opts || opts.json !== false;
   // 智谱/方舟均为 OpenAI 兼容；智谱部分视觉模型对 response_format 较严格，失败自动降级重试一次
   // glm-5.x 推理模型另带 reasoning_effort 降思考档（low 经实测有效），老模型不支持会自动降级去掉
-  async function post(useJsonFormat, useReasoning) {
+  async function post(useJsonFormat, useReasoning, useThinking) {
     const controller = new AbortController();
     const timer = setTimeout(function () {
       controller.abort();
@@ -131,9 +132,8 @@ async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
         temperature: temperature
       };
       if (useJsonFormat) body.response_format = { type: 'json_object' };
-      if (useReasoning && cfg.reasoningEffort) {
-        body.reasoning_effort = cfg.reasoningEffort;
-      }
+      if (useReasoning && cfg.reasoningEffort) body.reasoning_effort = cfg.reasoningEffort;
+      if (useThinking && cfg.thinking === 'enabled') body.thinking = { type: 'enabled' };
       const res = await fetch(cfg.baseUrl + '/chat/completions', {
         method: 'POST',
         headers: {
@@ -182,20 +182,30 @@ async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
     return content;
   }
 
-  let res = await post(wantJson, true);
-  // 400 降级重试：response_format 或 reasoning_effort 不被模型支持时去掉对应参数再试一次
-  if (!res.ok && res.status === 400) {
+  // 400 逐级降级：reasoning_effort → thinking 对象 → response_format（按报错信息判断，无信息时也逐级试一次）
+  let useR = !!cfg.reasoningEffort;
+  let useT = cfg.thinking === 'enabled';
+  let useJ = wantJson;
+  let res = await post(useJ, useR, useT);
+  for (let i = 0; i < 3 && !res.ok && res.status === 400; i++) {
     let peek = '';
     try {
       peek = await res.clone().text();
     } catch (e) {
-      /* 忽略 peek 失败，走正常报错 */
+      /* 忽略 peek 失败 */
     }
-    const dropJson = wantJson && /response_format|json_object/i.test(peek);
-    const dropReasoning = /reasoning_effort|reasoning|thinking/i.test(peek);
-    if (dropJson || dropReasoning) {
-      res = await post(wantJson && !dropJson, !dropReasoning);
+    const mentionsJson = /response_format|json_object/i.test(peek);
+    const mentionsOther = /thinking|reasoning/i.test(peek);
+    if (useR && (mentionsOther || !mentionsJson)) {
+      useR = false;
+    } else if (useT && (mentionsOther || !mentionsJson)) {
+      useT = false;
+    } else if (useJ && mentionsJson) {
+      useJ = false;
+    } else {
+      break;
     }
+    res = await post(useJ, useR, useT);
   }
   return readContent(res);
 }
