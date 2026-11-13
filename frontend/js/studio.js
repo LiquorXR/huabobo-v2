@@ -2300,18 +2300,44 @@ function speakHuman(text, onDone, onAudioStart) {
   function speakChunkedAudio() {
     var batchId = 'b' + token + '_' + Date.now().toString(36);
     ensureHumanVoice();
-    // 全部句子同时发出（后端按 batch 放行 burst，不会 429）；单句 12s 超时则该句走浏览器音
-    var pending = chunks.map(function (c) {
-      var p = fetchTtsAudio(c, 12000, 0, batchId).catch(function () {
-        return null;
+    // 最多 3 路并发，避免撞上游限流；其余排队，首句仍立即发出
+    var MAX_INFLIGHT = 3;
+    var resolvers = [];
+    var pending = chunks.map(function () {
+      return new Promise(function (resolve) {
+        resolvers.push(resolve);
       });
-      var timeout = new Promise(function (resolve) {
-        window.setTimeout(function () {
-          resolve(null);
-        }, 12000);
-      });
-      return Promise.race([p, timeout]);
     });
+    var nextFetch = 0;
+    var inFlight = 0;
+    function pump() {
+      if (token !== humanSpeakToken) return;
+      while (inFlight < MAX_INFLIGHT && nextFetch < chunks.length) {
+        (function (i) {
+          inFlight += 1;
+          var settled = false;
+          var done = function (v) {
+            if (settled) return;
+            settled = true;
+            inFlight -= 1;
+            resolvers[i](v);
+            pump();
+          };
+          var p = fetchTtsAudio(chunks[i], 25000, 0, batchId).catch(function () {
+            return null;
+          });
+          var timeout = new Promise(function (resolve) {
+            window.setTimeout(function () {
+              resolve(null);
+            }, 25000);
+          });
+          // 注意：超时 resolve(null) 后原请求仍在后台跑，取先到者；token 失效时直接丢弃
+          Promise.race([p, timeout]).then(done);
+        })(nextFetch);
+        nextFetch += 1;
+      }
+    }
+    pump();
     humanSpeakTimer = window.setTimeout(
       finish,
       Math.min(120000, 15000 + whole.length * 500)

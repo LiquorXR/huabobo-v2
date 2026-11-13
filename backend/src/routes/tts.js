@@ -257,6 +257,10 @@ function ttsConfig() {
   };
 }
 
+async function sleepMs(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
 async function speakOpenai(cfg, text, signal, withVolume) {
   const body = {
     model: cfg.model,
@@ -266,45 +270,63 @@ async function speakOpenai(cfg, text, signal, withVolume) {
     speed: cfg.speed
   };
   if (withVolume) body.volume = cfg.volume;
-  const upstream = await fetch(cfg.baseUrl + '/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + cfg.apiKey,
-      'X-Request-Id': crypto.randomUUID()
-    },
-    body: JSON.stringify(body),
-    signal: signal
-  });
-  const ct = String(upstream.headers.get('content-type') || '');
-  if (!upstream.ok) {
+  // 上游并发限流（429/5xx）时退避重试，最多 3 次；volume 只在 400 时去掉重发一次
+  let volumeDropped = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (signal && signal.aborted) {
+      const abortErr = new Error('语音服务连接失败');
+      abortErr.status = 502;
+      throw abortErr;
+    }
+    const upstream = await fetch(cfg.baseUrl + '/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + cfg.apiKey,
+        'X-Request-Id': crypto.randomUUID()
+      },
+      body: JSON.stringify(body),
+      signal: signal
+    });
+    if (upstream.ok) {
+      const ct = String(upstream.headers.get('content-type') || '');
+      // 正常返回 wav/pcm 二进制；异常时可能返回 JSON 错误
+      if (ct.indexOf('application/json') >= 0) {
+        let detail = '';
+        try {
+          detail = String(await upstream.text()).slice(0, 300);
+        } catch (e) {}
+        const err = new Error('语音合成失败' + (detail ? '：' + detail : ''));
+        err.status = 502;
+        throw err;
+      }
+      const ab = await upstream.arrayBuffer();
+      const audio = Buffer.from(ab);
+      if (!audio.length) {
+        const err = new Error('语音合成无音频');
+        err.status = 502;
+        throw err;
+      }
+      return { audio: audio, contentType: ct.indexOf('pcm') >= 0 ? 'audio/pcm' : 'audio/wav' };
+    }
     let detail = '';
     try {
       detail = String(await upstream.text()).slice(0, 300);
     } catch (e) {}
     console.error('[tts] upstream HTTP', upstream.status, detail);
+    if (upstream.status === 400 && withVolume && !volumeDropped) {
+      volumeDropped = true;
+      delete body.volume;
+      continue;
+    }
+    if ((upstream.status === 429 || upstream.status >= 500) && attempt < 2) {
+      await sleepMs(800 * (attempt + 1));
+      continue;
+    }
     const err = new Error('语音服务异常' + (detail ? '：' + detail : ''));
     err.status = upstream.status === 400 ? 400 : 502;
     throw err;
   }
-  // 正常返回 wav/pcm 二进制；异常时可能返回 JSON 错误
-  if (ct.indexOf('application/json') >= 0) {
-    let detail = '';
-    try {
-      detail = String(await upstream.text()).slice(0, 300);
-    } catch (e) {}
-    const err = new Error('语音合成失败' + (detail ? '：' + detail : ''));
-    err.status = 502;
-    throw err;
-  }
-  const ab = await upstream.arrayBuffer();
-  const audio = Buffer.from(ab);
-  if (!audio.length) {
-    const err = new Error('语音合成无音频');
-    err.status = 502;
-    throw err;
-  }
-  return { audio: audio, contentType: ct.indexOf('pcm') >= 0 ? 'audio/pcm' : 'audio/wav' };
 }
 
 router.post(
