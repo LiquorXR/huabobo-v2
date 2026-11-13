@@ -51,6 +51,7 @@
         <button type="button" class="nav-item" data-panel="artisans">合作艺人</button>
         <button type="button" class="nav-item" data-panel="about">关于我们</button>
         <button type="button" class="nav-item" data-panel="models">模型管理</button>
+        <button type="button" class="nav-item" data-panel="prints">打印申请</button>
       </nav>
       <button type="button" id="btn-logout" class="btn-logout">退出登录</button>
     </aside>
@@ -277,11 +278,9 @@
             <input type="hidden" id="model-edit-id">
             <input type="hidden" id="model-glb-keep">
             <input type="hidden" id="model-thumb-keep">
-            <label><span>归属分类</span>
-              <select id="model-category" required>
-                <option value="">请选择分类</option>
-              </select>
-              <p class="editor-section-hint">必须挂到一个分类后，才会出现在工作台对应分类弹窗中</p>
+            <label><span>归属分类（可多选）</span>
+              <div id="model-category-list" class="model-category-checkboxes"></div>
+              <p class="editor-section-hint">勾选一个或多个分类，模型会同时出现在这些分类弹窗中</p>
             </label>
             <label><span>模型名称</span><input type="text" id="model-name" required placeholder="如：寿桃、鲤鱼"></label>
             <label><span>模型介绍</span><textarea id="model-desc" rows="3" placeholder="简要说明造型与用途"></textarea></label>
@@ -301,6 +300,14 @@
 
       <section id="panel-comments" class="panel" hidden aria-hidden="true">
         <div id="comments-list" class="data-table-wrap"></div>
+      </section>
+
+      <section id="panel-prints" class="panel" hidden aria-hidden="true">
+        <div class="panel-toolbar">
+          <h3 class="models-admin-heading">实体打印申请</h3>
+          <button type="button" id="btn-prints-refresh" class="btn btn-ghost">刷新</button>
+        </div>
+        <div id="prints-list" class="data-table-wrap"></div>
       </section>
     </main>
   </div>

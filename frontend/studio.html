@@ -70,6 +70,10 @@
         </p>
         <p class="studio-hint-card__text">空白处拖拽旋转视角 · 按住模型拖拽可前后/左右/上下平移（Shift 锁定上下）</p>
         <p class="studio-hint-card__muted">触屏双指捏合缩放 · 右下角按钮旋转 / 放大缩小</p>
+        <label class="studio-hint-card__gain">
+          <span>拖动灵敏度 <b id="drag-gain-val">1.0x</b></span>
+          <input type="range" id="drag-gain" min="0.5" max="2" step="0.1" value="1" aria-label="拖动灵敏度">
+        </label>
       </div>
 
       <div class="studio-scale-btns" role="group" aria-label="模型旋转与缩放">
@@ -311,7 +315,15 @@
     </button>
     <button type="button" data-format="stl">
       <i data-lucide="component"></i>
-      导出 STL 格式
+      导出 STL 格式（可打印）
+    </button>
+    <button type="button" data-format="obj">
+      <i data-lucide="box"></i>
+      导出 OBJ 格式
+    </button>
+    <button type="button" data-format="print">
+      <i data-lucide="printer"></i>
+      提交实体打印申请
     </button>
   </div>
 

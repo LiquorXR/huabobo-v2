@@ -318,7 +318,8 @@
             desc: w.desc,
             publishedAt: w.publishedAt,
             status: w.status,
-            workType: w.workType || 'model'
+            workType: w.workType || 'model',
+            studio: w.studio || null
           };
         });
       })
@@ -345,6 +346,15 @@
   Api.saveStudioWork = function (payload) {
     var userId = sessionStorage.getItem('zhijiansu_user_id');
     if (!userId) return delay({ ok: false, message: '请先登录' });
+    var studioJson = '';
+    try {
+      if (payload.studio) studioJson = JSON.stringify(payload.studio);
+    } catch (e) {
+      studioJson = '';
+    }
+    if (studioJson && studioJson.length > 200 * 1024) {
+      return delay({ ok: false, message: '3D 快照过大，请减少模型数量后重试' });
+    }
     var imagePromise =
       payload.image && payload.image.indexOf('data:image') === 0 && ZJS.compressDataUrl
         ? ZJS.compressDataUrl(
@@ -377,6 +387,7 @@
         if (payload.id) fd.append('id', payload.id);
         fd.append('cover', file, filename);
         fd.append('image', image);
+        if (studioJson) fd.append('studio', studioJson);
         return fetch(BASE + '/api/works', { method: 'POST', headers: authHeaders(), body: fd })
           .then(function (res) {
             return res.text().then(function (text) {
@@ -412,7 +423,8 @@
           tag: payload.tag || '',
           desc: payload.desc || '',
           publish: !!payload.publish,
-          workType: payload.workType === 'ar_snapshot' ? 'ar_snapshot' : 'model'
+          workType: payload.workType === 'ar_snapshot' ? 'ar_snapshot' : 'model',
+          studio: payload.studio || null
         }
       });
     })

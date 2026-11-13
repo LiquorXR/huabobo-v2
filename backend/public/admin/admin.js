@@ -1438,24 +1438,43 @@
 
   var cachedCategories = [];
 
-  function fillModelCategorySelect(selectedId) {
+  function getSelectedCategoryIds() {
+    var checked = document.querySelectorAll('#model-category-list input[type="checkbox"]:checked');
+    return Array.prototype.map.call(checked, function (el) { return el.value; }).filter(Boolean);
+  }
+
+  function fillModelCategorySelect(selectedId, selectedIds) {
+    var wrap = document.getElementById('model-category-list');
+    // 兼容老 select（若有残留页面缓存）
     var sel = document.getElementById('model-category');
-    if (!sel) return;
-    var options = ['<option value="">请选择分类</option>'].concat(
-      cachedCategories.map(function (c) {
-        return (
-          '<option value="' +
-          escapeHtml(c.id) +
-          '"' +
-          (c.id === selectedId ? ' selected' : '') +
-          '>' +
-          escapeHtml(c.name) +
-          '</option>'
-        );
-      })
-    );
-    sel.innerHTML = options.join('');
-    if (selectedId) sel.value = selectedId;
+    var ids = selectedIds && selectedIds.length ? selectedIds : (selectedId ? [selectedId] : []);
+    if (wrap) {
+      if (!cachedCategories.length) {
+        wrap.innerHTML = '<p class="empty-hint">暂无分类，请先新增分类。</p>';
+      } else {
+        wrap.innerHTML = cachedCategories.map(function (c) {
+          var on = ids.indexOf(c.id) >= 0 ? ' checked' : '';
+          return '<label class="check-option"><input type="checkbox" value="' + escapeHtml(c.id) + '"' + on + '><span>' + escapeHtml(c.name) + '</span></label>';
+        }).join('');
+      }
+    }
+    if (sel) {
+      var options = ['<option value="">请选择分类</option>'].concat(
+        cachedCategories.map(function (c) {
+          return (
+            '<option value="' +
+            escapeHtml(c.id) +
+            '"' +
+            (c.id === selectedId ? ' selected' : '') +
+            '>' +
+            escapeHtml(c.name) +
+            '</option>'
+          );
+        })
+      );
+      sel.innerHTML = options.join('');
+      if (selectedId) sel.value = selectedId;
+    }
   }
 
   function loadCategories() {
@@ -1509,7 +1528,10 @@
             });
         });
       });
-      fillModelCategorySelect(document.getElementById('model-category').value);
+      fillModelCategorySelect(
+        (document.getElementById('model-category') && document.getElementById('model-category').value) || '',
+        getSelectedCategoryIds()
+      );
       return cachedCategories;
     });
   }
@@ -1579,13 +1601,14 @@
         '<table class="data-table data-table-models"><thead><tr><th class="cell-thumb">缩略图</th><th class="cell-title">名称</th><th>分类</th><th class="cell-summary">介绍</th><th>排序</th><th class="cell-date">更新时间</th><th class="cell-actions">操作</th></tr></thead><tbody>' +
         list
           .map(function (m) {
+            var catLabel = (m.categoryNames && m.categoryNames.length ? m.categoryNames.join('、') : (m.categoryName || '未分类'));
             return (
               '<tr><td class="cell-thumb">' +
               modelThumbHtml(m.thumbnail) +
               '</td><td class="cell-title">' +
               escapeHtml(m.name) +
               '</td><td>' +
-              escapeHtml(m.categoryName || '未分类') +
+              escapeHtml(catLabel) +
               '</td><td class="cell-summary">' +
               escapeHtml(m.desc || '—') +
               '</td><td>' +
@@ -1776,7 +1799,7 @@
       document.getElementById('model-sort').value = '0';
       document.getElementById('model-glb-keep').value = '';
       document.getElementById('model-thumb-keep').value = '';
-      fillModelCategorySelect('');
+      fillModelCategorySelect('', []);
       return;
     }
 
@@ -1786,7 +1809,8 @@
         return x.id === id;
       });
       if (!m) return;
-      fillModelCategorySelect(m.categoryId || '');
+      var ids = m.categoryIds && m.categoryIds.length ? m.categoryIds : (m.categoryId ? [m.categoryId] : []);
+      fillModelCategorySelect(m.categoryId || '', ids);
       document.getElementById('model-name').value = m.name || '';
       document.getElementById('model-desc').value = m.desc || '';
       document.getElementById('model-sort').value = String(m.sortOrder || 0);
@@ -1815,9 +1839,11 @@
       errEl.hidden = false;
       return;
     }
-    var categoryId = document.getElementById('model-category').value;
-    if (!categoryId) {
-      errEl.textContent = '请选择归属分类';
+    var categoryIds = getSelectedCategoryIds();
+    var legacySel = document.getElementById('model-category');
+    if (!categoryIds.length && legacySel && legacySel.value) categoryIds = [legacySel.value];
+    if (!categoryIds.length) {
+      errEl.textContent = '请选择归属分类（可多选）';
       errEl.hidden = false;
       return;
     }
@@ -1844,7 +1870,8 @@
         .then(function (thumbDataUrl) {
           var fd = new FormData();
           fd.append('name', name);
-          fd.append('categoryId', categoryId);
+          fd.append('categoryIds', JSON.stringify(categoryIds));
+          fd.append('categoryId', categoryIds[0]);
           fd.append('desc', document.getElementById('model-desc').value);
           fd.append('sortOrder', document.getElementById('model-sort').value || '0');
           if (glbFile) fd.append('glb', glbFile);
@@ -1905,6 +1932,41 @@
         resolve('');
       };
       reader.readAsDataURL(blob);
+    });
+  }
+
+  function loadPrints() {
+    return api('/api/admin/print-orders').then(function (res) {
+      var wrap = document.getElementById('prints-list');
+      if (!wrap) return;
+      var list = (res.data && res.data.list) || [];
+      if (!list.length) {
+        wrap.innerHTML = '<p class="empty-hint">暂无打印申请</p>';
+        return;
+      }
+      var statusLabel = { pending: '待处理', handling: '处理中', done: '已完成', rejected: '已拒绝' };
+      wrap.innerHTML =
+        '<table class="data-table"><thead><tr><th>作品ID</th><th>联系方式</th><th>备注</th><th>状态</th><th>时间</th><th></th></tr></thead><tbody>' +
+        list.map(function (o) {
+          return '<tr><td>' + escapeHtml(o.workId || '—') + '</td><td>' + escapeHtml(o.contact || '') + '</td><td>' +
+            escapeHtml(o.note || '—') + '</td><td>' + escapeHtml(statusLabel[o.status] || o.status) + '</td><td>' +
+            escapeHtml(o.createdAt || '') + '</td><td><div class="table-actions">' +
+            '<button type="button" class="btn btn-ghost" data-print-status="handling" data-print-id="' + o.id + '">处理中</button>' +
+            '<button type="button" class="btn btn-ghost" data-print-status="done" data-print-id="' + o.id + '">完成</button>' +
+            '<button type="button" class="btn btn-danger" data-print-status="rejected" data-print-id="' + o.id + '">拒绝</button>' +
+            '</div></td></tr>';
+        }).join('') + '</tbody></table>';
+      wrap.querySelectorAll('[data-print-id]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          api('/api/admin/print-orders/' + btn.getAttribute('data-print-id'), {
+            method: 'PATCH',
+            body: { status: btn.getAttribute('data-print-status') }
+          }).then(loadPrints).catch(function (err) { alert(err.message || '更新失败'); });
+        });
+      });
+    }).catch(function (err) {
+      var wrap = document.getElementById('prints-list');
+      if (wrap) wrap.innerHTML = '<p class="empty-hint">加载失败：' + escapeHtml(err.message || '') + '</p>';
     });
   }
 
@@ -2082,7 +2144,8 @@
     artisans: loadArtisans,
     about: loadAbout,
     models: loadStudioLibraryAdmin,
-    comments: loadComments
+    comments: loadComments,
+    prints: loadPrints
   };
 
   var panelTitles = {
@@ -2092,7 +2155,8 @@
     artisans: '合作艺人',
     about: '关于我们',
     models: '模型管理',
-    comments: '作品留言'
+    comments: '作品留言',
+    prints: '打印申请'
   };
 
   function switchPanel(name) {
@@ -2256,6 +2320,9 @@
     var file = this.files && this.files[0];
     if (!file) return;
     generateAutoThumbnailFromGlbFile(file);
+  });
+  onEl('btn-prints-refresh', 'click', function () {
+    loadPrints();
   });
 
   document.getElementById('btn-user-search').addEventListener('click', function () {

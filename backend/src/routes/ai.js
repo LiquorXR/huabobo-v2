@@ -14,7 +14,8 @@ const asyncHandler = require('../utils/asyncHandler');
  */
 const router = express.Router();
 
-const MOTIF_IDS = ['long', 'feng', 'yu', 'tao', 'lian', 'jubaopen', 'yuanbao', 'hua'];
+const MOTIF_IDS = ['long', 'feng', 'yu', 'tao', 'lian', 'jubaopen', 'yuanbao', 'hua', 'unknown'];
+const MOTIF_IDS_STRICT = ['long', 'feng', 'yu', 'tao', 'lian', 'jubaopen', 'yuanbao', 'hua'];
 const CRAFTS = ['fine', 'ok', 'soft'];
 const LIGHTS = ['dim', 'harsh', 'good'];
 const UPSTREAM_TIMEOUT_MS = 25000;
@@ -163,13 +164,14 @@ async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
 }
 
 const VISION_SYSTEM = [
-  '你是胶东花饽饽造型识别器。只看图片，从以下 8 类里选出最像的 1 个：',
+  '你是胶东花饽饽造型识别器。只看图片，从以下 9 类里选出最像的 1 个：',
   'long=龙形饽饽（长条盘龙、有爪有须）；feng=凤形（禽鸟、有翅有冠）；yu=鱼形（鱼身鱼尾）；',
   'tao=寿桃形（圆润桃形、带桃尖）；lian=莲花/牡丹花形（层叠花瓣）；',
   'jubaopen=聚宝盆形（盆状、口大肚圆）；yuanbao=元宝形（两头翘、中间鼓）；',
-  'hua=团花纹样（平面圆形花纹）。',
+  'hua=团花纹样（平面圆形花纹）；unknown=非花饽饽或看不清（模糊/遮挡/过暗过曝/非面塑）。',
   '同时评估：craft 面纹路（fine=细腻清晰 / ok=一般 / soft=模糊）；light 光线（dim=偏暗 / harsh=过曝 / good=合适）。',
-  '只输出纯 JSON，不要解释：{"motif":"<id>","craft":"<fine|ok|soft>","light":"<dim|harsh|good>"}。'
+  '同时给出 confidence 置信度 0-1（看不清/多候选时压低），以及 top2 第二候选 id 数组（无则空数组）。',
+  '只输出纯 JSON，不要解释：{"motif":"<id|unknown>","confidence":0.85,"top2":[],"craft":"<fine|ok|soft>","light":"<dim|harsh|good>"}。'
 ].join('\n');
 
 router.post(
@@ -215,12 +217,22 @@ router.post(
     if (!parsed || MOTIF_IDS.indexOf(parsed.motif) < 0) {
       return res.status(502).json({ ok: false, message: '识别结果无效' });
     }
+    var confidence = Number(parsed.confidence);
+    if (!isFinite(confidence)) confidence = parsed.motif === 'unknown' ? 0.4 : 0.7;
+    confidence = Math.min(1, Math.max(0, confidence));
+    var top2 = Array.isArray(parsed.top2) ? parsed.top2.filter(function (m) { return MOTIF_IDS_STRICT.indexOf(m) >= 0; }).slice(0, 2) : [];
+    var craft = CRAFTS.indexOf(parsed.craft) >= 0 ? parsed.craft : 'ok';
+    var light = LIGHTS.indexOf(parsed.light) >= 0 ? parsed.light : 'good';
+    var suggestRetake = parsed.motif === 'unknown' || confidence < 0.55 || (craft === 'soft' && light !== 'good');
     res.json({
       ok: true,
       data: {
         motif: parsed.motif,
-        craft: CRAFTS.indexOf(parsed.craft) >= 0 ? parsed.craft : 'ok',
-        light: LIGHTS.indexOf(parsed.light) >= 0 ? parsed.light : 'good'
+        confidence: Math.round(confidence * 100) / 100,
+        top2: top2,
+        craft: craft,
+        light: light,
+        suggestRetake: !!suggestRetake
       }
     });
   })

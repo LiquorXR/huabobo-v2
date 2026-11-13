@@ -1,5 +1,7 @@
 const express = require('express');
 const { eq, and, desc, sql } = require('drizzle-orm');
+const jwt = require('jsonwebtoken');
+const config = require('../config');
 const dbm = require('../db/client');
 const { newId, nowMs } = require('../db/helpers');
 const asyncHandler = require('../utils/asyncHandler');
@@ -13,6 +15,50 @@ const router = express.Router();
 
 function readBool(value) {
   return value === true || value === 'true' || value === '1' || value === 1;
+}
+
+const STUDIO_MAX_CHARS = 200 * 1024;
+
+function normalizeStudioInput(raw) {
+  if (raw == null || raw === '') return '';
+  var s = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  if (!s) return '';
+  if (s.length > STUDIO_MAX_CHARS) {
+    const err = new Error('3D 快照过大，请减少模型数量后重试');
+    err.status = 413;
+    throw err;
+  }
+  try {
+    var parsed = JSON.parse(s);
+    if (!parsed || typeof parsed !== 'object') return '';
+  } catch (e) {
+    const err = new Error('3D 快照格式无效');
+    err.status = 400;
+    throw err;
+  }
+  return s;
+}
+
+function parseStudioForResponse(stored) {
+  if (!stored) return null;
+  try {
+    var o = typeof stored === 'string' ? JSON.parse(stored) : stored;
+    return o && typeof o === 'object' ? o : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** GET /:id 场景：解析可选登录身份，是作者才返回 studio，避免他人拉取 3D 数据 */
+function getOptionalUserId(req) {
+  try {
+    var h = String((req.headers && req.headers.authorization) || '');
+    var m = h.match(/^Bearer\s+(.+)$/i);
+    if (!m) return '';
+    var payload = jwt.verify(m[1], config.jwtSecret);
+    if (payload && payload.type === 'user' && payload.sub) return String(payload.sub);
+  } catch (e) {}
+  return '';
 }
 
 function normalizeStoredImagePath(image) {
@@ -50,7 +96,8 @@ async function saveWorkFromRequest(req) {
     desc: body.desc || '',
     workType: body.workType === 'ar_snapshot' ? 'ar_snapshot' : 'model',
     publishedAt: publish ? nowMs() : null,
-    status: publish ? 'published' : 'draft'
+    status: publish ? 'published' : 'draft',
+    studio: normalizeStudioInput(body.studio)
   };
 
   let imagePath = '';
@@ -85,6 +132,7 @@ async function saveWorkFromRequest(req) {
         updatedAt: nowMs()
       };
       if (body.workType) patch.workType = payload.workType;
+      if (body.studio !== undefined) patch.studio = payload.studio;
       if (publish && !doc.publishedAt) patch.publishedAt = nowMs();
       if (imagePath) {
         patch.image =
@@ -106,6 +154,7 @@ async function saveWorkFromRequest(req) {
       status: payload.status,
       workType: payload.workType,
       publishedAt: payload.publishedAt,
+      studio: payload.studio || '',
       image: '',
       createdAt: now,
       updatedAt: now
@@ -125,12 +174,13 @@ function mapWorkResponse(doc) {
   return {
     id: doc.id,
     status: doc.status,
-    image: normalizeWorkImage(doc.image)
+    image: normalizeWorkImage(doc.image),
+    studio: parseStudioForResponse(doc.studio)
   };
 }
 
-function mapWorkRow(w) {
-  return {
+function mapWorkRow(w, includeStudio) {
+  var out = {
     id: w.id,
     userId: w.authorId || '',
     authorName: w.authorName || '',
@@ -142,6 +192,8 @@ function mapWorkRow(w) {
     status: w.status,
     workType: w.workType || 'model'
   };
+  if (includeStudio) out.studio = parseStudioForResponse(w.studio);
+  return out;
 }
 
 /** GET /api/works — 展厅已发布作品；?userId= 可查某用户作品，?includeDraft=1 含草稿 */
@@ -196,7 +248,7 @@ router.get(
   })
 );
 
-/** GET /api/works/:id — 单件作品（公开，含草稿） */
+/** GET /api/works/:id — 单件作品（公开，含草稿；仅作者本人返回 studio 3D 快照） */
 router.get(
   '/:id',
   requireDb,
@@ -212,6 +264,7 @@ router.get(
         publishedAt: works.publishedAt,
         status: works.status,
         workType: works.workType,
+        studio: works.studio,
         createdAt: works.createdAt,
         authorId: users.id,
         authorName: users.nickname
@@ -222,7 +275,9 @@ router.get(
       .limit(1);
     const w = items[0];
     if (!w) return res.status(404).json({ ok: false, message: '作品不存在' });
-    res.json({ ok: true, data: mapWorkRow(w) });
+    const viewerId = getOptionalUserId(req);
+    const isOwner = viewerId && w.authorId && viewerId === w.authorId;
+    res.json({ ok: true, data: mapWorkRow(w, !!isOwner) });
   })
 );
 

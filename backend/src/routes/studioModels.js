@@ -12,15 +12,40 @@ const { persistDataImage } = require('../utils/workImage');
 
 const router = express.Router();
 
+function parseStoredCategoryIds(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(function (x) { return String(x).trim(); }).filter(Boolean);
+  var s = String(raw).trim();
+  if (!s) return [];
+  if (s[0] === '[') {
+    try {
+      var arr = JSON.parse(s);
+      if (Array.isArray(arr)) return arr.map(function (x) { return String(x).trim(); }).filter(Boolean);
+    } catch (e) { return []; }
+    return [];
+  }
+  return s.split(/[，,;；\s]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+}
+
+function modelMatchesCategory(row, categoryId) {
+  if (!row || !categoryId) return false;
+  if (row.categoryId && String(row.categoryId) === String(categoryId)) return true;
+  var ids = parseStoredCategoryIds(row.categoryIds);
+  return ids.indexOf(String(categoryId)) >= 0;
+}
+
 function mapStudioModel(row) {
   if (!row) return null;
+  var ids = parseStoredCategoryIds(row.categoryIds);
+  if (!ids.length && row.categoryId) ids = [String(row.categoryId)];
   return {
     id: row.id,
     name: row.name,
     desc: row.desc,
     glbUrl: publicUrl(row.glbUrl),
     thumbnail: publicUrl(row.thumbnail),
-    categoryId: row.categoryId || '',
+    categoryId: row.categoryId || (ids[0] || ''),
+    categoryIds: ids,
     categoryName: row.categoryName || '',
     sortOrder: row.sortOrder || 0,
     enabled: row.enabled !== false && row.enabled !== 0,
@@ -50,6 +75,7 @@ async function fetchModels(filter) {
       glbUrl: studioModels.glbUrl,
       thumbnail: studioModels.thumbnail,
       categoryId: studioModels.categoryId,
+      categoryIds: studioModels.categoryIds,
       categoryName: studioModelCategories.name,
       sortOrder: studioModels.sortOrder,
       enabled: studioModels.enabled,
@@ -62,34 +88,41 @@ async function fetchModels(filter) {
     .orderBy(desc(studioModels.sortOrder), desc(studioModels.createdAt));
 }
 
-/** GET /api/studio-models — 工作台模型库（公开，按分类筛选） */
+/** GET /api/studio-models — 工作台模型库公开，按分类筛选；?categoryId= 单类（兼容老），?categoryIds=a,b 多类 OR */
 router.get(
   '/',
   requireDb,
   asyncHandler(async function (req, res) {
     res.set('Cache-Control', 'no-store');
     const categoryId = String((req.query && req.query.categoryId) || '').trim();
-    if (!categoryId) {
+    const categoryIdsRaw = String((req.query && (req.query.categoryIds || req.query.category_ids)) || '').trim();
+    const wanted = categoryIdsRaw
+      ? categoryIdsRaw.split(/[，,;；\s]+/).map(function (x) { return x.trim(); }).filter(Boolean)
+      : (categoryId ? [categoryId] : []);
+    if (!wanted.length) {
       return res.status(400).json({ ok: false, message: '请选择模型分类' });
     }
-    const category = await resolveCategory(categoryId);
-    if (!category || category.enabled === false || category.enabled === 0) {
-      return res.status(404).json({ ok: false, message: '分类不存在' });
-    }
     const { studioModels } = dbm.schema;
-    const items = await fetchModels(
-      and(eq(studioModels.enabled, true), eq(studioModels.categoryId, category.id))
-    );
+    const { studioModelCategories } = dbm.schema;
+    var primary = null;
+    for (var i = 0; i < wanted.length; i++) {
+      var c = await resolveCategory(wanted[i]);
+      if (c && c.enabled !== false && c.enabled !== 0) { primary = primary || c; }
+      if (!c) return res.status(404).json({ ok: false, message: '分类不存在' });
+    }
+    // 量小：全量拉取后按 categoryId/categoryIds OR 过滤，保证一物多类在每个归属类都出现
+    const items = await fetchModels(eq(studioModels.enabled, true));
     const list = (items || []).filter(function (m) {
-      return m.enabled !== false && m.enabled !== 0;
+      if (m.enabled === false || m.enabled === 0) return false;
+      for (var k = 0; k < wanted.length; k++) {
+        if (modelMatchesCategory(m, wanted[k])) return true;
+      }
+      return false;
     });
     res.json({
       ok: true,
       data: {
-        category: {
-          id: category.id,
-          name: category.name
-        },
+        category: primary ? { id: primary.id, name: primary.name } : { id: wanted[0], name: '' },
         list: list.slice(0, 100).map(mapStudioModel)
       }
     });
@@ -131,7 +164,7 @@ admin.use(requireDb);
 admin.get(
   '/',
   asyncHandler(async function (req, res) {
-    const { studioModels } = dbm.schema;
+    const { studioModels, studioModelCategories } = dbm.schema;
     const categoryId = String((req.query && req.query.categoryId) || '').trim();
     let filter;
     if (categoryId) {
@@ -140,9 +173,58 @@ admin.get(
       filter = eq(studioModels.categoryId, category.id);
     }
     const items = await fetchModels(filter);
-    res.json({ ok: true, data: { list: items.map(mapStudioModel) } });
+    var allCats = [];
+    try { allCats = await dbm.db.select().from(studioModelCategories); } catch (e) { allCats = []; }
+    var nameById = {};
+    allCats.forEach(function (c) { nameById[c.id] = c.name; });
+    var list = items.map(function (m) {
+      var mapped = mapStudioModel(m);
+      var names = (mapped.categoryIds || []).map(function (id) { return nameById[id] || ''; }).filter(Boolean);
+      if (!names.length && mapped.categoryName) names = [mapped.categoryName];
+      mapped.categoryNames = names;
+      return mapped;
+    });
+    // ?categoryId= 筛选时同样按多分类 OR 命中
+    if (categoryId) {
+      list = list.filter(function (m) {
+        if ((m.categoryIds || []).indexOf(categoryId) >= 0) return true;
+        return m.categoryId === categoryId;
+      });
+    }
+    res.json({ ok: true, data: { list: list } });
   })
 );
+
+async function resolveIncomingCategories(body) {
+  var rawList = [];
+  var cand = (body && (body.categoryIds || body.category_ids || body['categoryIds[]'])) || '';
+  if (cand) {
+    if (Array.isArray(cand)) rawList = cand;
+    else {
+      var s = String(cand).trim();
+      if (s[0] === '[') {
+        try { rawList = JSON.parse(s); } catch (e) { rawList = s.split(/[，,;；\s]+/); }
+      } else rawList = s.split(/[，,;；\s]+/);
+    }
+  }
+  if ((!rawList || !rawList.length) && body && body.categoryId) rawList = [body.categoryId];
+  rawList = (rawList || []).map(function (x) { return String(x).trim(); }).filter(Boolean);
+  // 去重
+  var seen = {};
+  rawList = rawList.filter(function (x) { if (seen[x]) return false; seen[x] = true; return true; });
+  if (!rawList.length) return { ids: [], categories: [] };
+  var cats = [];
+  for (var i = 0; i < rawList.length; i++) {
+    var c = await resolveCategory(rawList[i]);
+    if (!c) {
+      const err = new Error('分类不存在：' + rawList[i]);
+      err.status = 400;
+      throw err;
+    }
+    cats.push(c);
+  }
+  return { ids: cats.map(function (c) { return c.id; }), categories: cats };
+}
 
 /** POST /api/admin/studio-models — 上传 GLB */
 admin.post(
@@ -157,14 +239,20 @@ admin.post(
   },
   asyncHandler(async function (req, res) {
     const { studioModels } = dbm.schema;
-    const { name, desc, sortOrder, categoryId } = req.body || {};
+    const { name, desc, sortOrder } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ ok: false, message: '请填写模型名称' });
     }
-    const category = await resolveCategory(categoryId);
-    if (!category) {
-      return res.status(400).json({ ok: false, message: '请选择归属分类' });
+    var resolved;
+    try {
+      resolved = await resolveIncomingCategories(req.body || {});
+    } catch (e) {
+      return res.status(e.status || 400).json({ ok: false, message: e.message || '请选择归属分类' });
     }
+    if (!resolved.ids.length) {
+      return res.status(400).json({ ok: false, message: '请选择归属分类（可多选）' });
+    }
+    const category = resolved.categories[0];
     if (!req.files || !req.files.glb || !req.files.glb[0]) {
       return res.status(400).json({ ok: false, message: '请上传 GLB 模型文件' });
     }
@@ -178,6 +266,7 @@ admin.post(
       glbUrl: glbUrl,
       thumbnail: thumbnail,
       categoryId: category.id,
+      categoryIds: JSON.stringify(resolved.ids),
       sortOrder: parseInt(sortOrder, 10) || 0,
       enabled: true,
       createdAt: now,
@@ -218,14 +307,21 @@ admin.put(
     if (body.desc !== undefined) patch.desc = String(body.desc);
     if (body.sortOrder !== undefined) patch.sortOrder = parseInt(body.sortOrder, 10) || 0;
     if (body.enabled !== undefined) patch.enabled = body.enabled === 'true' || body.enabled === true;
-    if (body.categoryId !== undefined) {
-      const category = await resolveCategory(body.categoryId);
-      if (!category) {
-        return res.status(400).json({ ok: false, message: '请选择归属分类' });
+    var wantsCategory = body.categoryIds !== undefined || body.category_ids !== undefined || body['categoryIds[]'] !== undefined || body.categoryId !== undefined;
+    if (wantsCategory) {
+      var resolvedPatch;
+      try {
+        resolvedPatch = await resolveIncomingCategories(body);
+      } catch (e) {
+        return res.status(e.status || 400).json({ ok: false, message: e.message || '请选择归属分类' });
       }
-      patch.categoryId = category.id;
+      if (!resolvedPatch.ids.length) {
+        return res.status(400).json({ ok: false, message: '请选择归属分类（可多选）' });
+      }
+      patch.categoryId = resolvedPatch.ids[0];
+      patch.categoryIds = JSON.stringify(resolvedPatch.ids);
     }
-    if (!doc.categoryId && patch.categoryId === undefined) {
+    if (!doc.categoryId && patch.categoryId === undefined && !parseStoredCategoryIds(doc.categoryIds).length) {
       return res.status(400).json({ ok: false, message: '请选择归属分类' });
     }
 

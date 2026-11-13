@@ -30,6 +30,7 @@ const works = pgTable('works', {
   publishedAt: bigint('published_at', { mode: 'number' }),
   status: text('status').notNull().default('draft'),
   workType: text('work_type').notNull().default('model'),
+  studio: text('studio').notNull().default(''),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
 });
@@ -104,6 +105,7 @@ const studioModels = pgTable('studio_models', {
   glbUrl: text('glb_url').notNull(),
   thumbnail: text('thumbnail').notNull().default(''),
   categoryId: text('category_id').references(() => studioModelCategories.id),
+  categoryIds: text('category_ids').notNull().default('[]'),
   sortOrder: integer('sort_order').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
@@ -129,6 +131,17 @@ const aboutPages = pgTable('about_pages', {
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
 });
 
+const printOrders = pgTable('print_orders', {
+  id: text('id').primaryKey(),
+  workId: text('work_id').notNull().default(''),
+  userId: text('user_id').notNull().default(''),
+  contact: text('contact').notNull().default(''),
+  note: text('note').notNull().default(''),
+  status: text('status').notNull().default('pending'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
+});
+
 module.exports = {
   users,
   works,
@@ -138,5 +151,6 @@ module.exports = {
   artisans,
   studioModels,
   studioModelCategories,
-  aboutPages
+  aboutPages,
+  printOrders
 };

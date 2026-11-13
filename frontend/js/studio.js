@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 
 function canRunStudio() {
   if (typeof Api !== 'undefined' && !Api.isLoggedIn()) {
@@ -68,14 +69,16 @@ const BUILTIN_MODELS = [
 ];
 
 const DEFAULT_STUDIO_CATEGORIES = [
+  '非遗手艺',
+  '天空元素',
+  '地表元素',
+  '海洋元素',
   '传统纹样',
   '传统花饽饽',
-  '荣耀',
   '卡通人物',
   '水果蔬菜',
   '航空交通',
   '深海元素',
-  '天空元素',
   '教师元素',
   '花子草房子元素'
 ];
@@ -388,6 +391,14 @@ function apiBase() {
 function mapApiStudioModel(m) {
   const glbUrl = ZJS.normalizeWorkImageUrl ? ZJS.normalizeWorkImageUrl(m.glbUrl) : m.glbUrl;
   const thumb = ZJS.normalizeWorkImageUrl ? ZJS.normalizeWorkImageUrl(m.thumbnail) : m.thumbnail;
+  var ids = [];
+  if (m.categoryIds) {
+    if (Array.isArray(m.categoryIds)) ids = m.categoryIds.map(function (x) { return String(x); });
+    else if (typeof m.categoryIds === 'string' && m.categoryIds[0] === '[') {
+      try { ids = JSON.parse(m.categoryIds) || []; } catch (e) { ids = []; }
+    }
+  }
+  if (!ids.length && m.categoryId) ids = [String(m.categoryId)];
   return {
     id: m.id,
     name: m.name,
@@ -396,7 +407,8 @@ function mapApiStudioModel(m) {
     type: 'glb',
     glbUrl: glbUrl,
     thumbnail: thumb ? bustMediaUrl(thumb, m.updatedAt || m.id) : '',
-    categoryId: m.categoryId || '',
+    categoryId: m.categoryId || ids[0] || '',
+    categoryIds: ids,
     updatedAt: m.updatedAt || ''
   };
 }
@@ -416,8 +428,11 @@ function builtinHostCategory() {
 }
 
 function modelsForCategory(category) {
+  var cid = category && category.id;
   const remote = MODEL_LIBRARY.filter(function (m) {
-    return !m.builtin && m.categoryId === (category && category.id);
+    if (m.builtin) return false;
+    if (m.categoryIds && m.categoryIds.length) return m.categoryIds.indexOf(cid) >= 0;
+    return m.categoryId === cid;
   });
   const host = builtinHostCategory();
   if (host && category && host.id === category.id) {
@@ -483,7 +498,7 @@ function waitFrame() {
 }
 
 async function renderGlbThumbnailDataUrl(glbUrl, size) {
-  size = size || 256;
+  size = size || 512;
   if (!glbUrl || typeof THREE === 'undefined') return '';
   let renderer;
   let holder;
@@ -843,6 +858,9 @@ function initScene() {
 
   controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.rotateSpeed = 0.9;
+  controls.zoomSpeed = 0.9;
   controls.enablePan = false;
   controls.target.set(0, 0.35, 0);
   controls.maxPolarAngle = Math.PI / 2.1;
@@ -1127,7 +1145,43 @@ function exportGLB() {
 function exportSTL() {
   const str = new STLExporter().parse(doughGroup);
   downloadBlob(new Blob([str], { type: 'text/plain' }), 'zhijiansu-dough.stl');
-  setStatus('已导出 STL');
+  setStatus('已导出 STL（可直接用于 3D 打印切片）');
+}
+
+function exportOBJ() {
+  const str = new OBJExporter().parse(doughGroup);
+  downloadBlob(new Blob([str], { type: 'text/plain' }), 'zhijiansu-dough.obj');
+  setStatus('已导出 OBJ');
+}
+
+async function submitPrintOrder() {
+  if (typeof Api === 'undefined' || !Api.isLoggedIn || !Api.isLoggedIn()) {
+    alert('请先登录后再提交打印申请');
+    return;
+  }
+  var contact = window.prompt('请留下联系方式（手机/微信），我们收到后联系你确认打印：', '');
+  if (contact == null) return;
+  contact = String(contact).trim();
+  if (!contact) { alert('联系方式不能为空'); return; }
+  var note = window.prompt('备注（可选，如尺寸/颜色/数量）：', '') || '';
+  try {
+    setStatus('正在提交实体打印申请…');
+    var base = (window.ZJS && ZJS.API_BASE ? ZJS.API_BASE.replace(/\/$/, '') : '');
+    var token = '';
+    try { token = (window.Api && Api.getAuthToken && Api.getAuthToken()) || sessionStorage.getItem('zhijiansu_user_token') || ''; } catch (e) {}
+    var res = await fetch(base + '/api/print-orders', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+      body: JSON.stringify({ workId: (typeof lastSavedWorkId !== 'undefined' ? lastSavedWorkId : '') || '', contact: contact, note: note })
+    }).then(function (r) { return r.json(); });
+    if (!res || !res.ok) throw new Error((res && res.message) || '提交失败');
+    setStatus('打印申请已提交，我们会尽快联系你');
+    alert('打印申请已提交，请先导出 STL/GLB 备用，我们会尽快联系你。');
+  } catch (e) {
+    console.warn('[studio] 打印申请失败', e);
+    setStatus('打印申请提交失败');
+    alert('提交失败：' + (e.message || '请重试'));
+  }
 }
 
 function setBoardVisible(visible) {
@@ -2133,11 +2187,20 @@ function findMotifById(id) {
 
 async function identifyMotifViaAI(dataUrl) {
   const data = await postAiJson('/api/vision/identify', { image: dataUrl });
+  if (!data || !data.motif) throw new Error('unknown motif');
+  if (data.motif === 'unknown') {
+    const err = new Error('未认出花饽饽，请换角度/调亮重拍');
+    err.code = 'unknown';
+    err.recog = { motifs: [], craft: data.craft || 'ok', light: data.light || 'good', confidence: data.confidence || 0, suggestRetake: true };
+    throw err;
+  }
   const entry = findMotifById(data.motif);
   if (!entry) throw new Error('unknown motif');
   let seed = 0;
   for (let i = 0; i < data.motif.length; i++) seed = (seed * 31 + data.motif.charCodeAt(i)) % 97;
-  return { motifs: [entry], craft: data.craft, light: data.light, seed: seed, ratios: null };
+  var out = { motifs: [entry], craft: data.craft, light: data.light, seed: seed, ratios: null, confidence: data.confidence, suggestRetake: !!data.suggestRetake };
+  if (data.suggestRetake) setStatus('识别置信度偏低（' + Math.round((data.confidence || 0) * 100) + '%），建议换角度/调亮重拍，已给出参考结果');
+  return out;
 }
 
 async function fetchReviewText(context) {
@@ -2859,6 +2922,7 @@ async function confirmRealReviewShot() {
       recog = await identifyMotifViaAI(dataUrl);
     } catch (e) {
       console.warn('[studio] AI 识图不可用，回退本地识别', e && e.message);
+      if (e && e.code === 'unknown') setStatus('AI 未认出花饽饽，已用本地规则参考，建议调亮/换角度重拍');
     }
     lastRealRecognition = recog || analyzeHuaboboStill(realCamVideo);
     stopRealReviewCamera();
@@ -2938,9 +3002,23 @@ const interactPointer = new THREE.Vector2();
 const interactRaycaster = new THREE.Raycaster();
 const interactRight = new THREE.Vector3();
 const interactForward = new THREE.Vector3();
-const LONG_PRESS_MS = 220;
-const DRAG_START_PX = 8;
+const LONG_PRESS_MS = 120;
+const DRAG_START_PX = 4;
 const MODEL_SCALE_STEP = 1.12;
+const DRAG_GAIN_KEY = 'zhijiansu_drag_gain';
+
+function getDragGainMultiplier() {
+  try {
+    var v = parseFloat(localStorage.getItem(DRAG_GAIN_KEY) || '1');
+    if (!isFinite(v)) return 1;
+    return Math.min(2, Math.max(0.5, v));
+  } catch (e) { return 1; }
+}
+
+function getAdaptiveDragGain() {
+  var h = (canvas && canvas.clientHeight) || 600;
+  return 0.012 * (h / 600) * getDragGainMultiplier();
+}
 
 let interactDrag = null;
 let interactPressTimer = 0;
@@ -3024,7 +3102,7 @@ function applyModelTranslate(e) {
   const shift = !!(e.shiftKey || interactDrag.vertical);
   const dx = p.x - interactDrag.startX;
   const dy = p.y - interactDrag.startY;
-  const gain = 0.008;
+  const gain = getAdaptiveDragGain();
 
   camera.getWorldDirection(interactForward);
   interactForward.y = 0;
@@ -3097,6 +3175,20 @@ function endPinch() {
   pinchState = null;
   if (controls) controls.enableZoom = true;
   setOrbitEnabled(true);
+}
+
+function setupDragSensitivity() {
+  var slider = document.getElementById('drag-gain');
+  var label = document.getElementById('drag-gain-val');
+  if (!slider) return;
+  var cur = getDragGainMultiplier();
+  slider.value = String(cur);
+  if (label) label.textContent = cur.toFixed(1) + 'x';
+  slider.addEventListener('input', function () {
+    var v = parseFloat(slider.value) || 1;
+    try { localStorage.setItem(DRAG_GAIN_KEY, String(v)); } catch (e) {}
+    if (label) label.textContent = v.toFixed(1) + 'x';
+  });
 }
 
 function setupSceneInteraction() {
@@ -3331,6 +3423,8 @@ exportMenu.querySelectorAll('button').forEach((btn) => {
     exportMenu.classList.remove('is-open');
     if (btn.dataset.format === 'glb') exportGLB();
     if (btn.dataset.format === 'stl') exportSTL();
+    if (btn.dataset.format === 'obj') exportOBJ();
+    if (btn.dataset.format === 'print') submitPrintOrder();
   });
 });
 
@@ -3349,6 +3443,7 @@ async function boot() {
   buildCategoryList();
   buildColorPalette();
   initScene();
+  setupDragSensitivity();
   buildLoadedModelList();
   setupLibraryDrop();
   setupLibraryDialog();

@@ -19,6 +19,7 @@ const engagementRoutes = require('./routes/engagement');
 const aboutRoutes = require('./routes/about');
 const studioModelsRoutes = require('./routes/studioModels');
 const studioModelCategoriesRoutes = require('./routes/studioModelCategories');
+const printOrdersRoutes = require('./routes/printOrders');
 
 const app = express();
 
@@ -98,6 +99,8 @@ app.use('/api/studio-models', studioModelsRoutes.publicRouter);
 app.use('/api/admin/studio-models', studioModelsRoutes.adminRouter);
 app.use('/api/studio-model-categories', studioModelCategoriesRoutes.publicRouter);
 app.use('/api/admin/studio-model-categories', studioModelCategoriesRoutes.adminRouter);
+app.use('/api/print-orders', printOrdersRoutes.publicRouter);
+app.use('/api/admin/print-orders', printOrdersRoutes.adminRouter);
 app.use('/api/tts', require('./routes/tts'));
 app.use('/api', require('./routes/ai'));
 
