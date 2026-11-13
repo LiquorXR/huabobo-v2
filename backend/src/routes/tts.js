@@ -1,5 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const config = require('../config');
 const asyncHandler = require('../utils/asyncHandler');
 
 /**
@@ -20,6 +23,8 @@ const UPSTREAM_TIMEOUT_MS = 20000;
 const TTS_SAMPLE_RATE = 24000; // 智谱 TTS 固定 24kHz / 16bit / 单声道
 
 const lastHitByIp = new Map();
+// 同一会话的分句并发 burst 配额：batchId 在 60s 内最多 10 次，不占用 800ms 全局限流
+const batchHits = new Map();
 function clampNum(v, def, min, max) {
   const n = parseFloat(v);
   if (!Number.isFinite(n)) return def;
@@ -30,7 +35,54 @@ setInterval(function () {  // 防止 Map 无限增长：只保留最近 5 分钟
   lastHitByIp.forEach(function (t, ip) {
     if (t < cutoff) lastHitByIp.delete(ip);
   });
+  batchHits.forEach(function (rec, id) {
+    if (!rec || Date.now() - rec.first > 60 * 1000) batchHits.delete(id);
+  });
 }, 60 * 1000).unref();
+
+// 文本 hash 音频缓存：相同文案二次点评 0 等待（落盘 uploads/tts-cache，上限 500 个）
+function ttsCacheDir() {
+  const d = path.join(config.uploadDir, 'tts-cache');
+  try {
+    fs.mkdirSync(d, { recursive: true });
+  } catch (e) {}
+  return d;
+}
+function ttsCacheKey(cfg, text) {
+  return crypto
+    .createHash('sha256')
+    .update([cfg.model, cfg.voice, cfg.speed, text].join('|'))
+    .digest('hex');
+}
+function ttsCacheGet(key) {
+  try {
+    const p = path.join(ttsCacheDir(), key + '.wav');
+    if (fs.existsSync(p)) return fs.readFileSync(p);
+  } catch (e) {}
+  return null;
+}
+function ttsCacheSet(key, audio) {
+  try {
+    const dir = ttsCacheDir();
+    fs.writeFileSync(path.join(dir, key + '.wav'), audio);
+    const files = fs.readdirSync(dir).filter(function (f) { return /\.wav$/.test(f); });
+    if (files.length > 500) {
+      const withT = files
+        .map(function (f) {
+          try {
+            return { f: f, t: fs.statSync(path.join(dir, f)).mtimeMs };
+          } catch (e) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort(function (a, b) { return a.t - b.t; });
+      for (let i = 0; i < withT.length - 500; i++) {
+        try { fs.unlinkSync(path.join(dir, withT[i].f)); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
 
 function pcm16ToWavBuffer(pcm, sampleRate) {
   const rate = sampleRate || TTS_SAMPLE_RATE;
@@ -271,15 +323,45 @@ router.post(
       return res.status(503).json({ ok: false, message: '语音服务未配置' });
     }
 
-    // 简单节流：同 IP 两次请求至少间隔，避免 token 被刷爆
+    // 音频缓存命中直接返回：不计限流、不调上游
+    const cacheKey = ttsCacheKey(cfg, text);
+    const hit = ttsCacheGet(cacheKey);
+    if (hit && hit.length) {
+      res.set('Content-Type', 'audio/wav');
+      res.set('Content-Length', String(hit.length));
+      res.set('Cache-Control', 'public, max-age=86400');
+      res.set('X-TTS-Provider', cfg.provider);
+      res.set('X-TTS-Cache', 'hit');
+      return res.send(hit);
+    }
+
+    // 简单节流：同 IP 两次请求至少间隔，避免 token 被刷爆；
+    // 同一会话的分句并发（带 batch）走 burst 配额，不占用全局限流
     const ip =
       req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
-    const now = Date.now();
-    if (now - (lastHitByIp.get(ip) || 0) < MIN_INTERVAL_MS) {
-      res.set('Retry-After', '1');
-      return res.status(429).json({ ok: false, message: '请求太频繁' });
+    const batchId = String((req.body && req.body.batch) || '').slice(0, 40);
+    let inBatch = false;
+    if (batchId) {
+      const nowB = Date.now();
+      let rec = batchHits.get(batchId);
+      if (!rec || nowB - rec.first > 60 * 1000) rec = { count: 0, first: nowB };
+      rec.count += 1;
+      batchHits.set(batchId, rec);
+      if (rec.count <= 10) {
+        inBatch = true;
+      } else {
+        res.set('Retry-After', '1');
+        return res.status(429).json({ ok: false, message: '请求太频繁' });
+      }
     }
-    lastHitByIp.set(ip, now);
+    if (!inBatch) {
+      const now = Date.now();
+      if (now - (lastHitByIp.get(ip) || 0) < MIN_INTERVAL_MS) {
+        res.set('Retry-After', '1');
+        return res.status(429).json({ ok: false, message: '请求太频繁' });
+      }
+      lastHitByIp.set(ip, now);
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(function () {
@@ -301,10 +383,12 @@ router.post(
       clearTimeout(timer);
       const wav = ensureWav(out.audio, out.contentType);
       const clean = trimLeadingBeep(wav.audio);
+      ttsCacheSet(cacheKey, clean);
       res.set('Content-Type', wav.contentType);
       res.set('Content-Length', String(clean.length));
-      res.set('Cache-Control', 'no-store');
+      res.set('Cache-Control', 'public, max-age=86400');
       res.set('X-TTS-Provider', cfg.provider);
+      res.set('X-TTS-Cache', 'miss');
       return res.send(clean);
     } catch (e) {
       clearTimeout(timer);

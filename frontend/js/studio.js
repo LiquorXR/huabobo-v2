@@ -1989,7 +1989,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('keydown', unlockTtsAudio);
 }
 
-function fetchTtsAudio(text, timeoutMs, attempt) {
+function fetchTtsAudio(text, timeoutMs, attempt, batch) {
   const base = apiBase();
   if (!base) return Promise.reject(new Error('no backend'));
   let ctrl = null;
@@ -2012,7 +2012,7 @@ function fetchTtsAudio(text, timeoutMs, attempt) {
   return fetch(base + '/api/tts/speak', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: text }),
+    body: JSON.stringify(batch ? { text: text, batch: batch } : { text: text }),
     signal: ctrl ? ctrl.signal : undefined
   }).then(
     function (res) {
@@ -2264,29 +2264,93 @@ function speakHuman(text, onDone, onAudioStart) {
     finish();
     return;
   }
-  // 整段优先：一次合成、一次播放，语气不断句；失败再降级为浏览器逐段播放
-  // 注意降级后全程只用浏览器单音色，不再逐段回请求后端——之前逐段混用服务端/浏览器
-  // 两种声音，外加 800ms 后端限流撞上 260ms 段间隔频繁 429，就是断断续续的根源
-  fetchTtsAudio(whole, 25000).then(
-    function (blob) {
+  // 分句并行 + 接力播放：首句到即出声（首声 2-3s），边播边下；
+  // 全句失败/单句失败才走整段或浏览器兜底，音色全程统一为服务端同一 voice
+  var chunks = toSpeakChunks(text);
+  if (chunks.length <= 1) {
+    speakWholeAudio();
+    return;
+  }
+  speakChunkedAudio();
+
+  function speakWholeAudio() {
+    // 整段：一次合成、一次播放，语气不断句；失败再降级为浏览器逐段播放
+    fetchTtsAudio(whole, 25000).then(
+      function (blob) {
+        if (token !== humanSpeakToken) return;
+        humanSpeakTimer = window.setTimeout(
+          finish,
+          Math.min(120000, 15000 + whole.length * 500)
+        );
+        playTtsBlob(blob, fireAudioStart).then(
+          function () {
+            finish();
+          },
+          function () {
+            startChunked();
+          }
+        );
+      },
+      function () {
+        startChunked();
+      }
+    );
+  }
+
+  function speakChunkedAudio() {
+    var batchId = 'b' + token + '_' + Date.now().toString(36);
+    ensureHumanVoice();
+    // 全部句子同时发出（后端按 batch 放行 burst，不会 429）；单句 12s 超时则该句走浏览器音
+    var pending = chunks.map(function (c) {
+      var p = fetchTtsAudio(c, 12000, 0, batchId).catch(function () {
+        return null;
+      });
+      var timeout = new Promise(function (resolve) {
+        window.setTimeout(function () {
+          resolve(null);
+        }, 12000);
+      });
+      return Promise.race([p, timeout]);
+    });
+    humanSpeakTimer = window.setTimeout(
+      finish,
+      Math.min(120000, 15000 + whole.length * 500)
+    );
+    var idx = 0;
+    (function next() {
       if (token !== humanSpeakToken) return;
-      humanSpeakTimer = window.setTimeout(
-        finish,
-        Math.min(120000, 15000 + whole.length * 500)
-      );
-      playTtsBlob(blob, fireAudioStart).then(
-        function () {
-          finish();
-        },
-        function () {
-          startChunked();
+      if (idx >= chunks.length) {
+        finish();
+        return;
+      }
+      var i = idx;
+      idx += 1;
+      pending[i].then(function (blob) {
+        if (token !== humanSpeakToken) return;
+        if (blob) {
+          playTtsBlob(blob, fireAudioStart).then(next, function () {
+            speakBrowserChunk(i, next);
+          });
+        } else {
+          speakBrowserChunk(i, next);
         }
-      );
-    },
-    function () {
-      startChunked();
+      });
+    })();
+  }
+
+  function speakBrowserChunk(i, done) {
+    // 极小概率：单句服务端失败，仅该句用浏览器音补上，不断链
+    if (!window.speechSynthesis) {
+      done();
+      return;
     }
-  );
+    try {
+      fireAudioStart();
+      speakChunk(chunks[i], i, chunks.length, done, done);
+    } catch (e) {
+      done();
+    }
+  }
   function startChunked() {
     if (token !== humanSpeakToken) return;
     const chunks = toSpeakChunks(text);
