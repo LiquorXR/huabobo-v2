@@ -1830,10 +1830,19 @@ function setHumanActions(phase) {
   if (humanActionsRealFollowup) humanActionsRealFollowup.hidden = phase !== 'realFollowup';
 }
 
+function setHumanThinking(on) {
+  if (!humanFigureEl) return;
+  if (on) {
+    humanFigureEl.classList.remove('is-speaking');
+    humanFigureEl.classList.add('is-thinking');
+  } else {
+    humanFigureEl.classList.remove('is-thinking');
+  }
+}
+
 function stopHumanSpeech() {
   humanSpeakToken += 1;
-  stopHumanAudio();
-  if (humanSpeakTimer) {
+  stopHumanAudio();  if (humanSpeakTimer) {
     clearTimeout(humanSpeakTimer);
     humanSpeakTimer = 0;
   }
@@ -2039,7 +2048,7 @@ function fetchTtsAudio(text, timeoutMs, attempt) {
   });
 }
 
-function playPcmBlob16k(blob) {
+function playPcmBlob16k(blob, onStart) {
   // 兜底：万一拿到裸 PCM（24000Hz/16bit/单声道），用 WebAudio 解码播放
   return new Promise(function (resolve, reject) {
     try {
@@ -2088,6 +2097,9 @@ function playPcmBlob16k(blob) {
           if (ctx.state === 'suspended' && ctx.resume) {
             ctx.resume().catch(function () {});
           }
+          if (typeof onStart === 'function') {
+            try { onStart(); } catch (e) {}
+          }
           src.start();
         } catch (e) {
           reject(e);
@@ -2103,11 +2115,11 @@ function playPcmBlob16k(blob) {
   });
 }
 
-function playTtsBlob(blob) {
-  // 裸 PCM 走 WebAudio 兜底，其他走 <audio> 整段播放
+function playTtsBlob(blob, onStart) {
+  // 裸 PCM 走 WebAudio 兜底，其他走 <audio> 整段播放；onStart 在真正开始放音时触发一次
   if (blob && blob.type && blob.type.indexOf('pcm') >= 0) {
     stopHumanAudio();
-    return playPcmBlob16k(blob);
+    return playPcmBlob16k(blob, onStart);
   }
   return new Promise(function (resolve, reject) {
     try {
@@ -2136,6 +2148,9 @@ function playTtsBlob(blob) {
         done(false);
       };
       const pr = a.play();
+      if (typeof onStart === 'function') {
+        try { onStart(); } catch (e) {}
+      }
       if (pr && typeof pr.catch === 'function') {
         pr.catch(function () {
           done(false);
@@ -2210,10 +2225,20 @@ async function fetchReviewText(context) {
   return text;
 }
 
-function speakHuman(text, onDone) {
+function speakHuman(text, onDone, onAudioStart) {
   // 先停掉上一段：否则新旧两段重叠/上一段被半路掐断，听起来就是卡顿加"嘟"声
   stopHumanSpeech();
   const token = ++humanSpeakToken;
+  // 思考动画必须延续到真正出声那一刻（TTS 合成要几秒），出声时一次性切换到说话态
+  let audioStarted = false;
+  function fireAudioStart() {
+    if (audioStarted) return;
+    audioStarted = true;
+    if (token !== humanSpeakToken) return;
+    if (typeof onAudioStart === 'function') {
+      try { onAudioStart(); } catch (e) {}
+    }
+  }
   function clearStepTimer() {
     if (humanSpeakStepTimer) {
       try {
@@ -2249,7 +2274,7 @@ function speakHuman(text, onDone) {
         finish,
         Math.min(120000, 15000 + whole.length * 500)
       );
-      playTtsBlob(blob).then(
+      playTtsBlob(blob, fireAudioStart).then(
         function () {
           finish();
         },
@@ -2270,6 +2295,7 @@ function speakHuman(text, onDone) {
       return;
     }
     if (!window.speechSynthesis) {
+      fireAudioStart();
       humanSpeakTimer = window.setTimeout(finish, Math.min(24000, 1400 + String(text).length * 100));
       return;
     }
@@ -2286,6 +2312,7 @@ function speakHuman(text, onDone) {
       const chunk = chunks[i];
       const idx = i;
       i += 1;
+      fireAudioStart();
       speakChunk(
         chunk,
         idx,
@@ -2331,12 +2358,15 @@ function setHumanSpeech(text, speak, onDone) {
     }
   }
   if (speak && text) {
-    if (humanFigureEl) {
-      humanFigureEl.classList.remove('is-speaking');
-      void humanFigureEl.offsetWidth;
-      humanFigureEl.classList.add('is-speaking');
-    }
-    speakHuman(text, onDone);
+    // 思考动画延续到真正出声：出声回调里再撤思考、挂说话态
+    speakHuman(text, onDone, function () {
+      setHumanThinking(false);
+      if (humanFigureEl) {
+        humanFigureEl.classList.remove('is-speaking');
+        void humanFigureEl.offsetWidth;
+        humanFigureEl.classList.add('is-speaking');
+      }
+    });
   } else if (typeof onDone === 'function') {
     onDone();
   }
@@ -2792,6 +2822,7 @@ function clearRealFreeze() {
 function resetHumanIdle() {
   realReviewBusy = false;
   stopHumanSpeech();
+  setHumanThinking(false);
   stopRealReviewCamera();
   clearRealFreeze();
   setHumanSpeech('', false);
@@ -2820,6 +2851,9 @@ async function reviewDigitalWork() {
   const localText = buildHumanReview();
   setStatus(loadedModels.length ? '正在点评数字版花饽饽（3D 模型）…' : '案板为空，已给出提示');
   if (hintStatusEl) hintStatusEl.textContent = '数字版：点评案板上的 3D 模型';
+  // 思考态：AI 出结果前只做动画 + 静态提示，不发声
+  setHumanThinking(true);
+  setHumanSpeech('嗯，我先瞅瞅这盘……', false);
   let text = null;
   try {
     const seen = [];
@@ -2917,6 +2951,9 @@ async function confirmRealReviewShot() {
     }
     const frame = captureElementFrame(realCamVideo);
     const dataUrl = frame.toDataURL('image/jpeg', 0.9);
+    // 思考态：识图 + 点评出结果前只做动画，不发声
+    setHumanThinking(true);
+    setHumanSpeech('嗯，我瞅瞅这真饽饽……', false);
     let recog = null;
     try {
       recog = await identifyMotifViaAI(dataUrl);
@@ -3114,11 +3151,13 @@ function applyModelTranslate(e) {
   if (shift) {
     rec.wrapper.position.y = interactDrag.grabY - dy * gain;
   } else {
+    // 屏幕下移（dy>0）= 朝向相机（-forward），上移 = 远离；此前符号反了
+    // 非 Shift 只走地面平面（x/z），高度保持不动；高度只在 Shift 锁定模式下调整
     rec.wrapper.position.x =
-      interactDrag.startPos.x + interactRight.x * dx * gain + interactForward.x * dy * gain;
+      interactDrag.startPos.x + interactRight.x * dx * gain - interactForward.x * dy * gain;
     rec.wrapper.position.z =
-      interactDrag.startPos.z + interactRight.z * dx * gain + interactForward.z * dy * gain;
-    rec.wrapper.position.y = interactDrag.grabY - dy * gain * 0.35;
+      interactDrag.startPos.z + interactRight.z * dx * gain - interactForward.z * dy * gain;
+    rec.wrapper.position.y = interactDrag.grabY;
   }
   clampInstanceTransform(rec.wrapper);
 }

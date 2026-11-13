@@ -348,11 +348,14 @@
   margin-top: 8px;
   font-size: 0.68rem;
   color: var(--ink-soft, #5c6378);
+  pointer-events: auto;
 }
 
 .studio-hint-card__gain input[type='range'] {
   width: 100%;
   accent-color: var(--primary, #c41e3a);
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .studio-board-label {
@@ -449,6 +452,19 @@
 
 .studio-human.is-speaking .studio-human__img {
   animation: studio-human-speak 0.9s ease-in-out 2;
+}
+
+.studio-human.is-thinking .studio-human__img {
+  animation: studio-human-think 1.2s ease-in-out infinite;
+}
+
+@keyframes studio-human-think {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.025); filter: brightness(1.07); }
+}
+
+.studio-human.is-thinking .studio-human__badge::after {
+  content: ' · 思考中…';
 }
 
 @keyframes studio-human-speak {
