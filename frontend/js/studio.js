@@ -2016,9 +2016,9 @@ function fetchTtsAudio(text, timeoutMs, attempt, batch) {
     signal: ctrl ? ctrl.signal : undefined
   }).then(
     function (res) {
-      // 被后端限流（同 IP 800ms 内重复请求）：等一拍重试一次，保住服务端音色，
-      // 避免当场降级成浏览器音、两句两种声音听起来一卡一卡；最多重试 2 次
-      if (res.status === 429 && (attempt || 0) < 2) {
+      // 被后端限流：等一拍重试，保住服务端音色，
+      // 避免当场降级成浏览器音、两句两种声音听起来一卡一卡；分句带 batch 可多试一次
+      if (res.status === 429 && (attempt || 0) < (batch ? 3 : 2)) {
         cleanup(res);
         let waitMs = 1000;
         try {
@@ -2028,7 +2028,7 @@ function fetchTtsAudio(text, timeoutMs, attempt, batch) {
         return new Promise(function (resolve) {
           window.setTimeout(resolve, waitMs);
         }).then(function () {
-          return fetchTtsAudio(text, timeoutMs, (attempt || 0) + 1);
+          return fetchTtsAudio(text, timeoutMs, (attempt || 0) + 1, batch);
         });
       }
       return cleanup(res);
@@ -2300,6 +2300,19 @@ function speakHuman(text, onDone, onAudioStart) {
   function speakChunkedAudio() {
     var batchId = 'b' + token + '_' + Date.now().toString(36);
     ensureHumanVoice();
+    // 单句失败先自重试一次（带 batch 走 burst 配额），还不行才降级
+    function fetchChunkWithRetry(text) {
+      return fetchTtsAudio(text, 25000, 0, batchId)
+        .catch(function () {
+          return null;
+        })
+        .then(function (blob) {
+          if (blob) return blob;
+          return fetchTtsAudio(text, 25000, 0, batchId).catch(function () {
+            return null;
+          });
+        });
+    }
     // 最多 3 路并发，避免撞上游限流；其余排队，首句仍立即发出
     var MAX_INFLIGHT = 3;
     var resolvers = [];
@@ -2323,13 +2336,11 @@ function speakHuman(text, onDone, onAudioStart) {
             resolvers[i](v);
             pump();
           };
-          var p = fetchTtsAudio(chunks[i], 25000, 0, batchId).catch(function () {
-            return null;
-          });
+          var p = fetchChunkWithRetry(chunks[i]);
           var timeout = new Promise(function (resolve) {
             window.setTimeout(function () {
               resolve(null);
-            }, 25000);
+            }, 30000);
           });
           // 注意：超时 resolve(null) 后原请求仍在后台跑，取先到者；token 失效时直接丢弃
           Promise.race([p, timeout]).then(done);
@@ -2343,7 +2354,35 @@ function speakHuman(text, onDone, onAudioStart) {
       Math.min(120000, 15000 + whole.length * 500)
     );
     var idx = 0;
-    (function next() {
+    var failCount = 0;
+    var wholeTried = false;
+    function speakWholeRemaining(fromIdx) {
+      // 坏句累计 2 句：把剩下的一次性整段补发（1 个上游调用，并发压力最小），成了就接上，败了才逐句降级
+      var rest = chunks.slice(fromIdx).join('');
+      fetchTtsAudio(rest, 30000, 0, batchId).then(
+        function (blob) {
+          if (token !== humanSpeakToken) return;
+          if (blob) {
+            playTtsBlob(blob, fireAudioStart).then(
+              function () {
+                idx = chunks.length;
+                finish();
+              },
+              function () {
+                speakBrowserChunk(fromIdx, next);
+              }
+            );
+          } else {
+            speakBrowserChunk(fromIdx, next);
+          }
+        },
+        function () {
+          if (token !== humanSpeakToken) return;
+          speakBrowserChunk(fromIdx, next);
+        }
+      );
+    }
+    function next() {
       if (token !== humanSpeakToken) return;
       if (idx >= chunks.length) {
         finish();
@@ -2357,11 +2396,15 @@ function speakHuman(text, onDone, onAudioStart) {
           playTtsBlob(blob, fireAudioStart).then(next, function () {
             speakBrowserChunk(i, next);
           });
+        } else if (!wholeTried && (failCount += 1) >= 2) {
+          wholeTried = true;
+          speakWholeRemaining(i);
         } else {
           speakBrowserChunk(i, next);
         }
       });
-    })();
+    }
+    next();
   }
 
   function speakBrowserChunk(i, done) {
