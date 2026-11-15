@@ -8,6 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+import { createHumanAvatar } from './avatar-human.js?v=20261115';
 
 function canRunStudio() {
   if (typeof Api !== 'undefined' && !Api.isLoggedIn()) {
@@ -117,6 +118,8 @@ const exportMenu = document.getElementById('export-menu');
 const topActions = document.getElementById('studio-top-actions');
 const humanSpeechEl = document.getElementById('studio-human-speech');
 const humanFigureEl = document.getElementById('studio-human') || document.querySelector('.studio-human');
+const humanCanvasEl = document.getElementById('studio-human-canvas');
+const humanPosterEl = document.querySelector('.studio-human__poster');
 const humanActionsIdle = document.getElementById('human-actions-idle');
 const humanActionsChoose = document.getElementById('human-actions-choose');
 const humanActionsWrapup = document.getElementById('human-actions-wrapup');
@@ -132,6 +135,7 @@ let humanSpeakTimer = 0;
 let humanSpeakStepTimer = 0;
 let humanSpeakToken = 0;
 let humanVoice = null;
+let humanAvatar = null;
 let realReviewStream = null;
 let lastRealRecognition = null;
 let realReviewBusy = false;
@@ -1767,6 +1771,7 @@ async function startAR() {
     setARControls(true);
     setARHintCard(true);
     arMode = true;
+    if (humanAvatar) humanAvatar.setPaused(true);
     if (exportMenu) exportMenu.classList.remove('is-open');
     const btnAr = document.getElementById('btn-ar');
     btnAr.innerHTML = '<i data-lucide="x"></i><span>退出 AR</span>';
@@ -1804,6 +1809,7 @@ function stopAR() {
   setARControls(false);
   setARHintCard(false);
   arMode = false;
+  if (humanAvatar) humanAvatar.setPaused(false);
   document.getElementById('btn-ar').innerHTML = '<i data-lucide="scan-line"></i><span>AR 体验</span>';
   refreshLucide();
   const arSave = document.getElementById('btn-ar-save');
@@ -1824,6 +1830,8 @@ function colorNameFromHex(hex) {
 
 function setHumanActions(phase) {
   humanPhase = phase;
+  // 点评 / 拍摄开始时，收掉还在进行的打招呼手势，避免和思考动作叠在一起
+  if (humanAvatar && (phase === 'reviewing' || phase === 'camera')) humanAvatar.clearGestures();
   if (humanActionsIdle) humanActionsIdle.hidden = phase !== 'idle';
   if (humanActionsChoose) humanActionsChoose.hidden = phase !== 'choose';
   if (humanActionsWrapup) humanActionsWrapup.hidden = phase !== 'wrapup';
@@ -1831,13 +1839,77 @@ function setHumanActions(phase) {
 }
 
 function setHumanThinking(on) {
-  if (!humanFigureEl) return;
-  if (on) {
-    humanFigureEl.classList.remove('is-speaking');
-    humanFigureEl.classList.add('is-thinking');
-  } else {
-    humanFigureEl.classList.remove('is-thinking');
+  if (humanFigureEl) {
+    if (on) {
+      humanFigureEl.classList.remove('is-speaking');
+      humanFigureEl.classList.add('is-thinking');
+    } else {
+      humanFigureEl.classList.remove('is-thinking');
+    }
   }
+  avatarSetState(on ? 'thinking' : 'idle');
+}
+
+/* —— 3D 数字人：默认不显示静态图，只有 3D 失败才回退 —— */
+function avatarSetState(name) {
+  if (humanAvatar) humanAvatar.setState(name);
+  // 状态回写到 DOM，便于排查与按状态写样式
+  if (humanFigureEl) humanFigureEl.setAttribute('data-avatar-state', name);
+}
+
+function avatarGesture(name) {
+  if (humanAvatar) humanAvatar.gesture(name);
+}
+
+function showHumanPoster() {
+  if (humanCanvasEl) humanCanvasEl.hidden = true;
+  if (humanPosterEl) humanPosterEl.hidden = false;
+  if (humanFigureEl) humanFigureEl.classList.remove('is-3d', 'is-loading');
+}
+
+function initHumanAvatar() {
+  if (!humanCanvasEl) return;
+  // 只有慢加载（>350ms）才显示占位；本地秒开时不会闪一下
+  const hintTimer = window.setTimeout(function () {
+    if (humanFigureEl && !humanFigureEl.classList.contains('is-3d')) {
+      humanFigureEl.classList.add('is-loading');
+    }
+  }, 350);
+
+  try {
+    humanAvatar = createHumanAvatar({ canvas: humanCanvasEl });
+  } catch (e) {
+    window.clearTimeout(hintTimer);
+    console.warn('[studio] 数字人 3D 初始化失败，回退静态图', e);
+    humanAvatar = null;
+    showHumanPoster();
+    return;
+  }
+
+  humanAvatar.ready
+    .then(function (ok) {
+      window.clearTimeout(hintTimer);
+      if (!ok) {
+        console.warn('[studio] 数字人 3D 未就绪，回退静态图');
+        showHumanPoster();
+        return;
+      }
+      humanCanvasEl.hidden = false;
+      // 先按面板真实尺寸重建帧缓冲，再淡入，避免露出空画布
+      void humanCanvasEl.offsetWidth;
+      humanAvatar.resize();
+      if (humanFigureEl) humanFigureEl.classList.remove('is-loading');
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () {
+          if (humanFigureEl) humanFigureEl.classList.add('is-3d');
+        });
+      });
+    })
+    .catch(function (e) {
+      window.clearTimeout(hintTimer);
+      console.warn('[studio] 数字人 3D 加载失败，回退静态图', e);
+      showHumanPoster();
+    });
 }
 
 function stopHumanSpeech() {
@@ -2257,6 +2329,7 @@ function speakHuman(text, onDone, onAudioStart) {
       humanSpeakTimer = 0;
     }
     if (humanFigureEl) humanFigureEl.classList.remove('is-speaking');
+    avatarSetState('idle');
     if (typeof onDone === 'function') onDone();
   }
   const whole = toSpeakWhole(text);
@@ -2499,6 +2572,7 @@ function setHumanSpeech(text, speak, onDone) {
         void humanFigureEl.offsetWidth;
         humanFigureEl.classList.add('is-speaking');
       }
+      avatarSetState('speaking');
     });
   } else if (typeof onDone === 'function') {
     onDone();
@@ -2961,6 +3035,7 @@ function resetHumanIdle() {
   setHumanSpeech('', false);
   setHumanActions('idle');
   if (humanFigureEl) humanFigureEl.classList.remove('is-speaking');
+  avatarSetState('idle');
   setStatus('数字人已待机');
   if (hintStatusEl) hintStatusEl.textContent = '可再次开始数字人交互';
 }
@@ -2969,6 +3044,8 @@ function startHumanSession() {
   stopRealReviewCamera();
   clearRealFreeze();
   setHumanActions('greeting');
+  // 打招呼：抬右手挥两下，同时开口问候
+  avatarGesture('wave');
   // 问候语也要走 TTS 合成：先挂思考动画，出声时自动切换说话态
   setHumanThinking(true);
   setHumanSpeech(HUMAN_GREETING, true, function () {
@@ -3153,6 +3230,7 @@ function setupHumanInteraction() {
       stopHumanSpeech();
       clearRealFreeze();
       setHumanActions('choose');
+      avatarSetState('idle');
       setStatus('请选择点评数字版或真实实物');
     });
   }
@@ -3579,6 +3657,7 @@ function setupLibraryDrop() {
     const entry = findLibraryEntry(id);
     if (entry && entry.enabled) {
       addStudioModel(entry).then(function () {
+        avatarGesture('nod');
         if (humanPhase !== 'idle' && humanSpeechEl && !humanSpeechEl.hidden) {
           humanSpeechEl.textContent = '「' + entry.name + '」已放到案板上。需要点评时选「点评数字版花饽饽」。';
         }
@@ -3621,6 +3700,7 @@ async function boot() {
   buildLoadedModelList();
   setupLibraryDrop();
   setupLibraryDialog();
+  initHumanAvatar();
   setupHumanInteraction();
   setInterval(refreshModelLibrary, 8000);
   document.addEventListener('visibilitychange', function () {

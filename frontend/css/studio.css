@@ -429,25 +429,84 @@
 .studio-human {
   position: relative;
   overflow: hidden;
+  /* 固定高度：静态图 / 3D 画布 / 加载占位三者叠放，切换时不会跳动 */
+  height: 210px;
   border-radius: 16px;
   background: linear-gradient(180deg, #f6f3ee 0%, #ece6dc 100%);
   border: 1px solid var(--border, rgba(30, 77, 107, 0.12));
   box-shadow: 0 8px 24px rgba(20, 24, 36, 0.08);
 }
 
+@media (min-width: 768px) {
+  .studio-human {
+    height: 240px;
+  }
+}
+
+.studio-human__img,
+.studio-human__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .studio-human__img {
   display: block;
-  width: 100%;
-  height: 210px;
   object-fit: cover;
   object-position: center 8%;
   user-select: none;
 }
 
-@media (min-width: 768px) {
-  .studio-human__img {
-    height: 240px;
-  }
+/* 3D 画布：加载完成后淡入，避免静态图与模型之间硬切 */
+.studio-human__canvas {
+  display: block;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.studio-human.is-3d .studio-human__canvas {
+  opacity: 1;
+}
+
+.studio-human__canvas[hidden],
+.studio-human__poster[hidden] {
+  display: none !important;
+}
+
+/* 加载占位：只在慢加载（>350ms）时淡入，快加载不会闪一下 */
+.studio-human__loading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft, #5c6378);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.studio-human.is-loading .studio-human__loading {
+  opacity: 1;
+}
+
+.studio-human__loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary, #c41e3a);
+  animation: studio-human-dot 1s ease-in-out infinite;
+}
+
+@keyframes studio-human-dot {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 .studio-human.is-speaking .studio-human__img {
@@ -476,6 +535,7 @@
   position: absolute;
   left: 8px;
   bottom: 8px;
+  z-index: 2;
   padding: 3px 8px;
   font-size: 0.62rem;
   font-weight: 600;

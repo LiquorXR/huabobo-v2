@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>面塑 DIY 工作台 — 指间塑</title>
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/studio.css?v=20261029">
+  <link rel="stylesheet" href="css/studio.css?v=20261115b">
 </head>
 <body class="studio-page">
 
@@ -108,9 +108,15 @@
           <img
             src="images/studio-digital-human.jpg"
             alt="AI非遗数字传承人饽饽小匠"
-            class="studio-human__img"
+            class="studio-human__img studio-human__poster"
             draggable="false"
+            hidden
           >
+          <canvas id="studio-human-canvas" class="studio-human__canvas" aria-hidden="true" hidden></canvas>
+          <div class="studio-human__loading" aria-hidden="true">
+            <span class="studio-human__loading-dot"></span>
+            <span>数字人加载中…</span>
+          </div>
           <div class="studio-human__badge">AI 非遗数字人</div>
         </div>
         <p id="studio-human-speech" class="studio-human__speech" hidden aria-live="polite"></p>
@@ -337,7 +343,7 @@
       function loadStudio() {
         var s = document.createElement('script');
         s.type = 'module';
-        s.src = 'js/studio.js?v=20261102';
+        s.src = 'js/studio.js?v=20261115b';
         document.body.appendChild(s);
       }
       loadStudio();
@@ -345,3 +351,4 @@
   </script>
 </body>
 </html>
+
