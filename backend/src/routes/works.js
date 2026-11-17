@@ -132,7 +132,8 @@ async function saveWorkFromRequest(req) {
         updatedAt: nowMs()
       };
       if (body.workType) patch.workType = payload.workType;
-      if (body.studio !== undefined) patch.studio = payload.studio;
+      // null/undefined 表示客户端没带快照（例如从“我的”页分享）：保留原快照，只有带了真实值才覆盖
+      if (body.studio !== undefined && body.studio !== null) patch.studio = payload.studio;
       if (publish && !doc.publishedAt) patch.publishedAt = nowMs();
       if (imagePath) {
         patch.image =

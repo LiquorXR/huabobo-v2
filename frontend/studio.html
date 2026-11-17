@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>面塑 DIY 工作台 — 指间塑</title>
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/studio.css?v=20261115b">
+  <link rel="stylesheet" href="css/studio.css?v=20261117">
 </head>
 <body class="studio-page">
 
@@ -56,7 +56,7 @@
           <i data-lucide="mouse-pointer-2"></i>
           操作提示
         </p>
-        <p class="studio-hint-card__text">空白处拖拽旋转视角 · 按住模型拖拽前后/左右平移（按住 Shift 改为上下平移）</p>
+        <p class="studio-hint-card__text">空白处拖拽旋转视角 · 按住模型拖拽前后/左右平移（按住Shift上下移动）</p>
         <p class="studio-hint-card__muted">触屏双指捏合缩放 · 右下角按钮旋转 / 放大缩小</p>
         <label class="studio-hint-card__gain">
           <span>拖动灵敏度 <b id="drag-gain-val">1.0x</b></span>
@@ -336,14 +336,14 @@
   <script src="js/utils.js"></script>
   <script src="js/api-config.js?v=20260521"></script>
   <script src="js/db-seed.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/api-remote.js?v=20260520"></script>
+  <script src="js/api.js?v=20261117"></script>
+  <script src="js/api-remote.js?v=20261117"></script>
   <script>
     (function () {
       function loadStudio() {
         var s = document.createElement('script');
         s.type = 'module';
-        s.src = 'js/studio.js?v=20261115b';
+        s.src = 'js/studio.js?v=20261117';
         document.body.appendChild(s);
       }
       loadStudio();

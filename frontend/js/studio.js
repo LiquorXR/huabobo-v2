@@ -792,12 +792,24 @@ function buildLoadedModelList() {
 
 async function restoreStudioInstances(instances, fallbackScale) {
   clearAllLoadedModels();
-  if (!instances || !instances.length) return;
+  const result = { restored: 0, missing: [] };
+  if (!instances || !instances.length) return result;
   const defaultScale = fallbackScale ?? 1;
   for (const inst of instances) {
-    const entry = findLibraryEntry(inst.modelId);
-    if (!entry) continue;
-    const mesh = await createModelMeshFromEntry(entry);
+    const entry = findLibraryEntry(inst && inst.modelId);
+    if (!entry) {
+      // 模型库尚未载入或该模型已下架：记下来最后统一告诉用户，不再静默跳过
+      result.missing.push({ modelId: (inst && inst.modelId) || '', name: '' });
+      continue;
+    }
+    let mesh = null;
+    try {
+      mesh = await createModelMeshFromEntry(entry);
+    } catch (e) {
+      console.warn('[studio] 模型恢复失败', entry.id, e);
+      result.missing.push({ modelId: entry.id, name: entry.name || '' });
+      continue;
+    }
     if (inst.color != null) {
       applyColorToObject(mesh, inst.color);
     }
@@ -832,9 +844,11 @@ async function restoreStudioInstances(instances, fallbackScale) {
       mesh,
       color: inst.color != null ? inst.color : isGlbEntry(entry) ? null : currentColor
     });
+    result.restored += 1;
   }
   activeInstanceId = loadedModels.length ? loadedModels[loadedModels.length - 1].instanceId : null;
   buildLoadedModelList();
+  return result;
 }
 
 function setViewportBackgroundWhite() {
@@ -1318,10 +1332,11 @@ async function applyStudioSnapshot(snapshot) {
   doughGroup.position.set(0, WORKBENCH_TOP_Y, 0);
   savedDoughY = WORKBENCH_TOP_Y;
 
+  let result = { restored: 0, missing: [] };
   if (snapshot.instances && snapshot.instances.length) {
-    await restoreStudioInstances(snapshot.instances, legacyScale);
+    result = await restoreStudioInstances(snapshot.instances, legacyScale);
   } else {
-    await restoreStudioInstances(
+    result = await restoreStudioInstances(
       [
         {
           modelId: snapshot.model || 'round',
@@ -1334,6 +1349,7 @@ async function applyStudioSnapshot(snapshot) {
     );
   }
   clampDoughOnWorkbench();
+  return result;
 }
 
 function getMyProfileUrl() {
@@ -1347,6 +1363,18 @@ function goToMyProfile() {
     ZJS.replace('profile.html?id=me');
   } else {
     window.location.replace(getMyProfileUrl());
+  }
+}
+
+/** 编辑恢复前先把远端模型库拉全，避免恢复时按 modelId 找不到库模型 */
+async function ensureModelLibraryLoaded() {
+  if (!MODEL_CATEGORIES.length) return;
+  for (const category of MODEL_CATEGORIES) {
+    try {
+      await fetchModelsByCategory(category);
+    } catch (e) {
+      console.warn('[studio] 模型库预加载失败', category && category.name, e);
+    }
   }
 }
 
@@ -1364,16 +1392,57 @@ async function loadWorkForEdit(workId) {
     setStatus('正在编辑：「' + work.title + '」（无模型快照，请重新捏制）');
     return;
   }
-  await applyStudioSnapshot(work.studio);
-  setStatus('正在编辑：「' + work.title + '」· 保存将更新该作品');
+  setStatus('正在载入模型库…');
+  await ensureModelLibraryLoaded();
+  const editResult = await applyStudioSnapshot(work.studio);
+  reportRestoredModels(work.title, editResult);
+}
+
+/** 编辑恢复完成后把"恢复了几个/几个找不回来"告诉用户 */
+function reportRestoredModels(title, result) {
+  const okCount = result ? result.restored : 0;
+  const missing = result && result.missing ? result.missing : [];
+  let msg = '正在编辑：「' + title + '」· 保存将更新该作品';
+  if (missing.length) {
+    const names = missing
+      .map(function (m) { return m.name || m.modelId; })
+      .filter(function (n) { return !!n; })
+      .slice(0, 3)
+      .join('、');
+    msg += '（已恢复 ' + okCount + ' 个模型，' + missing.length + ' 个找不回来' +
+      (names ? '：' + names : '，可能已下架') + '）';
+  } else if (okCount) {
+    msg += '（已恢复 ' + okCount + ' 个模型）';
+  }
+  setStatus(msg);
 }
 
 function captureWorkThumbnail() {
   if (!renderer || !scene || !camera || !canvas) return '';
   if (arMode) setARModelOnly(true);
   const prevBg = scene.background;
-  const size = 360;
+  const size = 720;
+  // 贴近拍：按案板上模型的包围盒临时拉近相机只拍模型不拍空案板
+  const savedCamPos = camera.position.clone();
+  const savedTarget = controls ? controls.target.clone() : null;
+  let fitted = false;
   try {
+    if (doughGroup && loadedModels.length) {
+      const box = new THREE.Box3().setFromObject(doughGroup);
+      if (!box.isEmpty()) {
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        const dir = camera.position.clone().sub(controls.target);
+        if (dir.lengthSq() > 1e-6 && sphere.radius > 1e-4) {
+          dir.normalize();
+          const dist =
+            (sphere.radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.12;
+          controls.target.copy(sphere.center);
+          camera.position.copy(sphere.center).addScaledVector(dir, dist);
+          camera.lookAt(sphere.center);
+          fitted = true;
+        }
+      }
+    }
     scene.background = new THREE.Color(0xf3ebe0);
     renderer.setClearColor(0xf3ebe0, 1);
     renderer.render(scene, camera);
@@ -1394,11 +1463,16 @@ function captureWorkThumbnail() {
     const ox = (size - dw) / 2;
     const oy = (size - dh) / 2;
     ctx.drawImage(src, 0, 0, cw, ch, ox, oy, dw, dh);
-    const dataUrl = thumb.toDataURL('image/jpeg', 0.86);
+    const dataUrl = thumb.toDataURL('image/jpeg', 0.85);
     if (dataUrl && dataUrl.length > 800) return dataUrl;
   } catch (e) {
     console.warn('[studio] 缩略图截取失败', e);
   } finally {
+    if (fitted && savedTarget) {
+      camera.position.copy(savedCamPos);
+      controls.target.copy(savedTarget);
+      camera.lookAt(savedTarget);
+    }
     if (prevBg) scene.background = prevBg;
     else setViewportBackgroundWhite();
   }
@@ -2286,6 +2360,13 @@ async function identifyMotifViaAI(dataUrl) {
   let seed = 0;
   for (let i = 0; i < data.motif.length; i++) seed = (seed * 31 + data.motif.charCodeAt(i)) % 97;
   var out = { motifs: [entry], craft: data.craft, light: data.light, seed: seed, ratios: null, confidence: data.confidence, suggestRetake: !!data.suggestRetake };
+  // 后端 top2 次选也带上：点评话术会说"像龙又带点凤影"而不是硬判一个
+  if (Array.isArray(data.top2)) {
+    data.top2.forEach(function (topId) {
+      const second = findMotifById(topId);
+      if (second && out.motifs.indexOf(second) < 0 && out.motifs.length < 2) out.motifs.push(second);
+    });
+  }
   if (data.suggestRetake) setStatus('识别置信度偏低（' + Math.round((data.confidence || 0) * 100) + '%），建议换角度/调亮重拍，已给出参考结果');
   return out;
 }
@@ -3148,10 +3229,76 @@ function settleRealFreezePhoto(dataUrl) {
   });
 }
 
+/** 拍摄门禁：按"确定"前先看一帧亮度和清晰度太暗/太亮/太糊直接拦下不浪费一次识图 */
+function assessLiveFrameQuality(videoEl) {
+  try {
+    const vw = videoEl.videoWidth || 640;
+    const vh = videoEl.videoHeight || 480;
+    const w = 96;
+    const h = Math.max(48, Math.round((96 * vh) / vw));
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(videoEl, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const lum = new Float32Array(w * h);
+    let sum = 0;
+    for (let i = 0; i < w * h; i++) {
+      const l = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3;
+      lum[i] = l;
+      sum += l;
+    }
+    const mean = sum / (w * h);
+    if (mean < 55) return { ok: false, reason: 'dark' };
+    if (mean > 205) return { ok: false, reason: 'bright' };
+    let acc = 0;
+    let n = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const lap = 4 * lum[i] - lum[i - 1] - lum[i + 1] - lum[i - w] - lum[i + w];
+        acc += lap * lap;
+        n += 1;
+      }
+    }
+    if (n && acc / n < 25) return { ok: false, reason: 'blurry' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: true };
+  }
+}
+
+/** 低置信度时的诚实话术：说清原因请用户重拍不再用本地猜测硬评 */
+function buildRetakeHint(recog, unknownMotif) {
+  if (unknownMotif) return '嗯这张我没认出来是哪种饽饽。你把纹样摆正、靠近点再点一次确定我重看。';
+  const light = recog && recog.light;
+  const craft = recog && recog.craft;
+  const motifs = (recog && recog.motifs) || [];
+  if (light === 'dim') return '这张有点暗我看不清纹样。开灯或靠窗亮处再点一次确定。';
+  if (light === 'harsh') return '这张太亮了纹样被洗白了。避开直射光再点一次确定。';
+  if (craft === 'soft') return '这张有点糊层次看不清。拿稳、靠近饽饽再点一次确定。';
+  if (motifs.length > 1) {
+    return '这张像' + motifs[0].name + '又带点' + motifs[1].name + '的意思我拿不准。换个角度再点一次确定。';
+  }
+  return '这张我没看太清换个角度、靠近点再点一次确定。';
+}
+
 async function confirmRealReviewShot() {
   if (realReviewBusy) return;
   if (!realCamVideo || !realCamVideo.srcObject) {
     setHumanSpeech('画面还没出来。你对着饽饽再点一次确定。', true);
+    return;
+  }
+  const quality = assessLiveFrameQuality(realCamVideo);
+  if (!quality.ok) {
+    const hint =
+      quality.reason === 'dark'
+        ? '画面太暗了我看不清。开灯或到亮处、靠近饽饽再点确定。'
+        : quality.reason === 'bright'
+          ? '画面太亮了纹样被洗白了。避开直射光再点确定。'
+          : '画面有点糊。拿稳手机、靠近饽饽再点确定。';
+    setHumanSpeech(hint, true);
     return;
   }
   realReviewBusy = true;
@@ -3167,13 +3314,38 @@ async function confirmRealReviewShot() {
     setHumanThinking(true);
     setHumanSpeech('嗯，我瞅瞅这真饽饽……', false);
     let recog = null;
+    let aiUnclear = false;
+    let aiDown = false;
+    let unknownMotif = false;
     try {
       recog = await identifyMotifViaAI(dataUrl);
+      const conf = recog && typeof recog.confidence === 'number' ? recog.confidence : 0.7;
+      if (!recog || recog.suggestRetake || conf < 0.55) aiUnclear = true;
     } catch (e) {
-      console.warn('[studio] AI 识图不可用，回退本地识别', e && e.message);
-      if (e && e.code === 'unknown') setStatus('AI 未认出花饽饽，已用本地规则参考，建议调亮/换角度重拍');
+      if (e && e.code === 'unknown') {
+        aiUnclear = true;
+        unknownMotif = true;
+      } else {
+        aiDown = true;
+        console.warn('[studio] AI 识图不可用回退本地识别', e && e.message);
+      }
     }
-    lastRealRecognition = recog || analyzeHuaboboStill(realCamVideo);
+    if (!recog) recog = analyzeHuaboboStill(realCamVideo);
+    // AI 明确说看不清：诚实重拍不用本地猜测硬评；AI 挂了才走本地兜底老路
+    if (aiUnclear && !aiDown) {
+      lastRealRecognition = recog;
+      stopRealReviewCamera();
+      await settleRealFreezePhoto(dataUrl);
+      setStatus('识别置信度不足建议重拍');
+      setHumanSpeech(buildRetakeHint(recog, unknownMotif), true, function () {
+        if (humanPhase === 'idle') return;
+        realReviewBusy = false;
+        clearRealFreeze();
+        startRealReviewCamera();
+      });
+      return;
+    }
+    lastRealRecognition = recog;
     stopRealReviewCamera();
     await settleRealFreezePhoto(dataUrl);
     setStatus('正在识别造型与纹样…');

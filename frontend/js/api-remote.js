@@ -359,8 +359,8 @@
       payload.image && payload.image.indexOf('data:image') === 0 && ZJS.compressDataUrl
         ? ZJS.compressDataUrl(
             payload.image,
-            payload.workType === 'ar_snapshot' ? 1200 : 360,
-            payload.workType === 'ar_snapshot' ? 0.88 : 0.72
+            payload.workType === 'ar_snapshot' ? 1200 : 720,
+            payload.workType === 'ar_snapshot' ? 0.88 : 0.8
           )
         : delay(payload.image || '');
 

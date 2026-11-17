@@ -461,7 +461,7 @@
         ZJS.compressDataUrl
       ) {
         var arShot = payload.workType === 'ar_snapshot';
-        return ZJS.compressDataUrl(image, arShot ? 1200 : 360, arShot ? 0.88 : 0.62).then(function (small) {
+        return ZJS.compressDataUrl(image, arShot ? 1200 : 480, arShot ? 0.88 : 0.72).then(function (small) {
           var next = Object.assign({}, payload, {
             image: small || 'images/my-work-1.jpg',
             _compressed: true

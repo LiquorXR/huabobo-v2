@@ -211,14 +211,15 @@ async function arkChat(cfg, model, messages, maxTokens, temperature, opts) {
 }
 
 const VISION_SYSTEM = [
-  '你是胶东花饽饽造型识别器。只看图片，从以下 9 类里选出最像的 1 个：',
-  'long=龙形饽饽（长条盘龙、有爪有须）；feng=凤形（禽鸟、有翅有冠）；yu=鱼形（鱼身鱼尾）；',
-  'tao=寿桃形（圆润桃形、带桃尖）；lian=莲花/牡丹花形（层叠花瓣）；',
-  'jubaopen=聚宝盆形（盆状、口大肚圆）；yuanbao=元宝形（两头翘、中间鼓）；',
-  'hua=团花纹样（平面圆形花纹）；unknown=非花饽饽或看不清（模糊/遮挡/过暗过曝/非面塑）。',
+  '你是胶东花饽饽造型识别器。先在心里用一句话客观描述图片里物体的外形、颜色和纹理再从以下 9 类里选出最像的 1 个：',
+  'long=龙形饽饽（长条盘龙、有爪有须有鳞）；feng=凤形（禽鸟、有翅有冠、尾羽散开）；yu=鱼形（鱼身鱼尾、扁平）；',
+  'tao=寿桃形（圆润、带桃尖、一侧有叶）；lian=莲花/牡丹花形（层叠花瓣、有花心）；',
+  'jubaopen=聚宝盆形（盆状、口大肚圆、可堆元宝）；yuanbao=元宝形（两头翘、中间鼓）；',
+  'hua=团花纹样（平面圆形花纹、无立体造型）；unknown=非花饽饽或看不清（模糊/遮挡/过暗过曝/非面塑）。',
+  '易混淆区分：有爪有须是龙不是凤；禽鸟无爪多为凤；圆润带尖是桃不是元宝；盆状开口是聚宝盆；平面无立体是团花。',
   '同时评估：craft 面纹路（fine=细腻清晰 / ok=一般 / soft=模糊）；light 光线（dim=偏暗 / harsh=过曝 / good=合适）。',
-  '同时给出 confidence 置信度 0-1（看不清/多候选时压低），以及 top2 第二候选 id 数组（无则空数组）。',
-  '只输出纯 JSON，不要解释：{"motif":"<id|unknown>","confidence":0.85,"top2":[],"craft":"<fine|ok|soft>","light":"<dim|harsh|good>"}。'
+  '同时给出 confidence 置信度 0-1（看不清或在两个候选之间摇摆时必须压到 0.5 以下），以及 top2 第二候选 id 数组（无则空数组最多 2 个且与 motif 不同）。',
+  '只输出纯 JSON不要解释：{"motif":"<id|unknown>","confidence":0.85,"top2":[],"craft":"<fine|ok|soft>","light":"<dim|harsh|good>"}。拿不准时可多加一个 seen 字段用一句话描述看到的形状。'
 ].join('\n');
 
 router.post(
@@ -258,7 +259,7 @@ router.post(
           ]
         }
       ],
-      600,
+      800,
       0.1
     );
     let parsed;
