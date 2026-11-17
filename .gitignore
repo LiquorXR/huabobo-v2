@@ -15,5 +15,10 @@ __MACOSX/
 # large seed models: uploaded manually after deploy, never committed
 assets/model-library/
 
+# playwright artifacts (E2E runs in CI; local runs leave these)
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+
 # local agent instructions, not shared via the repository
 AGENTS.md

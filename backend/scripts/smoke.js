@@ -239,6 +239,33 @@ async function req(method, path, body, token) {
   check('work studio owner sees snapshot', r.status === 200 && !!(r.data.data && r.data.data.studio), r.data.data);
   r = await req('GET', '/api/works/' + swid);
   check('work studio hidden for guests', r.status === 200 && !(r.data.data && r.data.data.studio), r.data.data);
+
+  // 回归：从“我的”页分享时不带 studio（客户端会发 studio:null），不能把已有快照清空
+  r = await req('POST', '/api/works', { id: swid, title: 'CI-studio', publish: true, studio: null }, utoken);
+  check('share without studio 201', r.status === 201, r);
+  r = await req('GET', '/api/works/' + swid, undefined, utoken);
+  check(
+    'studio survives share without studio',
+    r.status === 200 && !!(r.data.data && r.data.data.studio && r.data.data.studio.instances),
+    r.data.data
+  );
+
+  // 回归：显式传空对象仍应被接受（用户清空案板后保存）
+  r = await req('POST', '/api/works', { id: swid, title: 'CI-studio', studio: { color: 1, instances: [] } }, utoken);
+  check('studio can be explicitly replaced', r.status === 201, r);
+  r = await req('GET', '/api/works/' + swid, undefined, utoken);
+  check(
+    'replaced studio persisted',
+    r.status === 200 && !!(r.data.data && r.data.data.studio && r.data.data.studio.instances &&
+      r.data.data.studio.instances.length === 0),
+    r.data.data
+  );
+
+  // 回归：快照超过 200KB 必须拒绝，避免把大 JSON 塞进库里
+  const hugeStudio = { color: 1, instances: [], blob: 'x'.repeat(210 * 1024) };
+  r = await req('POST', '/api/works', { id: swid, title: 'CI-studio', studio: hugeStudio }, utoken);
+  check('oversized studio rejected 413', r.status === 413, r.status);
+
   await req('DELETE', '/api/works/' + swid, undefined, utoken);
 
   r = await req('POST', '/api/print-orders', { contact: '13800000000', note: 'smoke' }, utoken);

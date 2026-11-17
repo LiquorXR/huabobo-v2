@@ -1,0 +1,79 @@
+name: E2E
+
+on:
+  push:
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'e2e/**'
+      - '.github/workflows/e2e.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'e2e/**'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JWT_SECRET: ci-test-secret-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: backend deps
+        working-directory: backend
+        run: npm ci --no-audit --no-fund
+
+      - name: seed + boot backend
+        working-directory: backend
+        run: |
+          npm run seed
+          nohup node src/index.js > /tmp/e2e-backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -s http://127.0.0.1:3000/api/health | grep -q '"db":"connected"'; then break; fi
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:3000/api/health
+
+      - name: start frontend static server
+        run: |
+          nohup node frontend/scripts/serve.js > /tmp/e2e-frontend.log 2>&1 &
+          sleep 2
+          curl -sf -o /dev/null http://127.0.0.1:8765/index.html
+
+      - name: cache playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json') }}
+
+      - name: e2e deps + chromium
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: run e2e
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: server logs on failure
+        if: failure()
+        run: tail -n 200 /tmp/e2e-backend.log /tmp/e2e-frontend.log || true
+
+      - name: upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
