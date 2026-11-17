@@ -14,3 +14,6 @@ __MACOSX/
 
 # large seed models: uploaded manually after deploy, never committed
 assets/model-library/
+
+# local agent instructions, not shared via the repository
+AGENTS.md
