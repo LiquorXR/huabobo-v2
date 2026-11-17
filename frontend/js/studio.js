@@ -141,6 +141,7 @@ let lastRealRecognition = null;
 let realReviewBusy = false;
 
 let scene, camera, renderer, controls;
+let cameraUserMoved = false;
 let board, boardEdge, doughGroup;
 /** 工作台顶面世界坐标 Y（与 board 几何一致：center 0.06 + half height 0.06） */
 const WORKBENCH_TOP_Y = 0.12;
@@ -706,6 +707,11 @@ async function addStudioModel(entry) {
     });
     setActiveInstance(instanceId);
     setStatus('已添加：' + entry.name + '（共 ' + loadedModels.length + ' 个）');
+    // 移动端：加完立刻收起抽屉和弹窗，让用户看到案板上的结果
+    if (isSheetLayout()) {
+      closeLibraryDialog();
+      closeStudioSheet();
+    }
   } catch (e) {
     console.error('[studio] 模型加载失败', e);
     setStatus('加载失败：' + entry.name);
@@ -728,7 +734,7 @@ function removeLoadedModel(instanceId) {
   setStatus(
     loadedModels.length
       ? '已移除模型（剩余 ' + loadedModels.length + ' 个）'
-      : '案板上暂无模型，请从右侧模型库添加'
+      : '案板上暂无模型，打开模型库添加'
   );
 }
 
@@ -739,7 +745,7 @@ function buildLoadedModelList() {
   if (!loadedModels.length) {
     const empty = document.createElement('p');
     empty.className = 'studio-loaded-empty';
-    empty.textContent = '暂无模型，请从右侧花饽饽模型库拖到中间';
+    empty.textContent = '案板上暂无模型，从「模型库」挑一个放上来';
     list.appendChild(empty);
     return;
   }
@@ -884,6 +890,9 @@ function initScene() {
   controls.maxPolarAngle = Math.PI / 2.1;
   controls.minDistance = 2;
   controls.maxDistance = 8;
+  controls.addEventListener('start', function () {
+    cameraUserMoved = true;
+  });
   canvas.style.touchAction = 'none';
   setupSceneInteraction();
 
@@ -924,9 +933,25 @@ function initScene() {
 function resize() {
   const w = viewport.clientWidth;
   const h = viewport.clientHeight;
+  const prevAspect = camera.aspect;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h, false);
+  // 竖屏画布窄：默认机位会把案板裁掉，用户没手动转过视角时按比例重设机位
+  // 只在画布比例明显变化（换设备/转屏）时重设，避免说话气泡出现导致的小幅重排也跳画面
+  const aspectChanged = prevAspect > 0 && Math.abs(camera.aspect - prevAspect) / prevAspect > 0.15;
+  if (!cameraUserMoved && aspectChanged && controls) {
+    if (camera.aspect < 1) {
+      controls.target.set(0, 0.12, 0);
+      camera.position
+        .copy(controls.target)
+        .addScaledVector(new THREE.Vector3(0, 1.45, 1).normalize(), 7.8);
+    } else {
+      camera.position.set(0, 2.8, 4.2);
+      controls.target.set(0, 0.35, 0);
+    }
+    controls.update();
+  }
 }
 
 function animate() {
@@ -3601,6 +3626,79 @@ function endPinch() {
   setOrbitEnabled(true);
 }
 
+/** 移动端：提示卡默认收起（点标题展开/收起）、触屏操作文案 */
+function isCoarsePointer() {
+  try {
+    return window.matchMedia && window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(pointer: fine)').matches;
+  } catch (e) {
+    return 'ontouchstart' in window;
+  }
+}
+
+function setupMobileHintCard() {
+  const card = document.querySelector('.studio-hint-card');
+  if (!card || !viewport) return;
+  if (isCoarsePointer()) {
+    card.classList.add('is-collapsed');
+    const text = card.querySelector('.studio-hint-card__text');
+    if (text) text.textContent = '空白处拖拽旋转视角 · 按住模型拖拽平移 · 双指捏合缩放';
+    const muted = card.querySelector('.studio-hint-card__muted');
+    if (muted) muted.textContent = '点右侧分类卡片添加到案板 · 右下角按钮旋转 / 放大缩小';
+  }
+  viewport.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.studio-hint-card__title')) {
+      card.classList.toggle('is-collapsed');
+    }
+  });
+}
+
+/** 移动端底部抽屉：模型库 + 配色 */
+function isSheetLayout() {
+  try {
+    return window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+  } catch (e) {
+    return window.innerWidth <= 767;
+  }
+}
+
+let sheetEls = null;
+
+function openStudioSheet() {
+  if (!isSheetLayout()) return;
+  if (!sheetEls) return;
+  sheetEls.sidebar.classList.add('is-open');
+  if (sheetEls.backdrop) sheetEls.backdrop.hidden = false;
+  if (sheetEls.fab) sheetEls.fab.setAttribute('aria-expanded', 'true');
+}
+
+function closeStudioSheet() {
+  if (!sheetEls) return;
+  sheetEls.sidebar.classList.remove('is-open');
+  if (sheetEls.backdrop) sheetEls.backdrop.hidden = true;
+  if (sheetEls.fab) sheetEls.fab.setAttribute('aria-expanded', 'false');
+}
+
+function setupStudioSheet() {
+  const sidebar = document.getElementById('studio-sidebar-right');
+  const backdrop = document.getElementById('studio-sheet-backdrop');
+  const fab = document.getElementById('btn-open-sheet');
+  const closeBtn = document.getElementById('btn-close-sheet');
+  if (!sidebar || !fab) return;
+  sheetEls = { sidebar: sidebar, backdrop: backdrop, fab: fab };
+  fab.addEventListener('click', function () {
+    if (sidebar.classList.contains('is-open')) closeStudioSheet();
+    else openStudioSheet();
+  });
+  if (closeBtn) closeBtn.addEventListener('click', closeStudioSheet);
+  if (backdrop) backdrop.addEventListener('click', closeStudioSheet);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeStudioSheet();
+  });
+  window.addEventListener('resize', function () {
+    if (!isSheetLayout()) closeStudioSheet();
+  });
+}
+
 function setupDragSensitivity() {
   var slider = document.getElementById('drag-gain');
   var label = document.getElementById('drag-gain-val');
@@ -3767,8 +3865,7 @@ function setupSceneInteraction() {
         return;
       }
       if (interactPressStart) {
-        const p = eventClientPos(e, 0);
-        const dist = Math.hypot(p.x - interactPressStart.x, p.y - interactPressStart.y);
+        const p = eventClientPos(e, 0);        const dist = Math.hypot(p.x - interactPressStart.x, p.y - interactPressStart.y);
         if (dist > DRAG_START_PX) {
           if (interactPressTimer) {
             clearTimeout(interactPressTimer);
@@ -3872,6 +3969,8 @@ async function boot() {
   buildLoadedModelList();
   setupLibraryDrop();
   setupLibraryDialog();
+  setupMobileHintCard();
+  setupStudioSheet();
   initHumanAvatar();
   setupHumanInteraction();
   setInterval(refreshModelLibrary, 8000);
@@ -3882,6 +3981,8 @@ async function boot() {
   const editId = typeof ZJS !== 'undefined' ? ZJS.getQuery('edit') : null;
   if (editId) {
     await loadWorkForEdit(editId);
+  } else if (isCoarsePointer()) {
+    setStatus('点「模型库」挑一张卡片，把花饽饽放到中间案板');
   } else {
     setStatus('从右侧选择分类，把花饽饽拖到中间案板');
   }

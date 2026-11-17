@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>面塑 DIY 工作台 — 指间塑</title>
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/studio.css?v=20261117">
+  <link rel="stylesheet" href="css/style.css?v=20261117c">
+  <link rel="stylesheet" href="css/studio.css?v=20261118f">
 </head>
 <body class="studio-page">
 
@@ -90,6 +90,11 @@
 
       <p id="studio-board-label" class="studio-board-label">仿真面食案板工作台</p>
 
+      <button type="button" id="btn-open-sheet" class="studio-fab" aria-controls="studio-sidebar-right" aria-expanded="false">
+        <i data-lucide="boxes"></i>
+        <span>模型库</span>
+      </button>
+
       <div id="studio-real-cam" class="studio-real-cam" hidden>
         <video id="studio-real-cam-video" class="studio-real-cam__video" playsinline webkit-playsinline muted autoplay></video>
         <div class="studio-real-cam__frame" aria-hidden="true"></div>
@@ -168,7 +173,13 @@
       </section>
     </aside>
 
-    <aside class="studio-sidebar studio-sidebar--right">
+    <aside class="studio-sidebar studio-sidebar--right" id="studio-sidebar-right">
+      <div class="studio-sheet-bar">
+        <span class="studio-sheet-grip" aria-hidden="true"></span>
+        <button type="button" id="btn-close-sheet" class="studio-sheet-close" aria-label="关闭模型库">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
       <section class="studio-panel-section studio-model-section">
         <h2 class="studio-section-title">
           <i data-lucide="boxes"></i>
@@ -177,7 +188,7 @@
         <div id="model-list" class="studio-category-list studio-scroll-area"></div>
         <p class="studio-panel-note studio-model-section__note">
           <i data-lucide="server"></i>
-          点击分类，在弹窗中拖模型到中间案板
+          点击分类，在弹窗中把模型添加到中间案板
         </p>
       </section>
       <section class="studio-panel-section studio-color-section">
@@ -191,6 +202,8 @@
         </div>
       </section>
     </aside>
+
+    <div id="studio-sheet-backdrop" class="studio-sheet-backdrop" hidden></div>
 
     <footer class="studio-footer">
       <span id="studio-status">就绪</span>
@@ -343,7 +356,7 @@
       function loadStudio() {
         var s = document.createElement('script');
         s.type = 'module';
-        s.src = 'js/studio.js?v=20261117';
+        s.src = 'js/studio.js?v=20261118f';
         document.body.appendChild(s);
       }
       loadStudio();

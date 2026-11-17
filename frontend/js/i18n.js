@@ -91,7 +91,7 @@
       gallery: {
         hero: { title: '数字化展厅', desc: '注册用户在「数字化体验」中 DIY 完成的作品，发布到社区后集中展示于此。点击作者可进入其 DIY 作品集主页。', cta: '我也要 DIY 创作 →' },
         searchLabel: '搜索作品或作者',
-        searchPlaceholder: '输入作品名称或作者昵称，如：锦鲤、小胶东',
+        searchPlaceholder: '输入作品名称或作者昵称',
         searchClear: '清空搜索',
         loading: '正在加载社区作品…',
         empty: '暂无已发布作品',
@@ -239,7 +239,7 @@
       gallery: {
         hero: { title: 'Digital gallery', desc: 'DIY works from registered users, published to the community. Tap an author to view their portfolio.', cta: 'Create my DIY work →' },
         searchLabel: 'Search works or authors',
-        searchPlaceholder: 'Title or author, e.g. carp, Xiaojiaodong',
+        searchPlaceholder: 'Title or author name',
         searchClear: 'Clear search',
         loading: 'Loading community works…',
         empty: 'No published works yet',

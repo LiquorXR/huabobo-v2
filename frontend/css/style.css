@@ -39,6 +39,7 @@ body {
   color: var(--ink);
   line-height: 1.75;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -113,7 +114,10 @@ a {
 }
 
 .lang-btn {
-  padding: 5px 8px;
+  padding: 8px 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -820,6 +824,7 @@ main {
   font-size: clamp(2rem, 4vw, 2.75rem);
   color: var(--ink);
   margin-bottom: 12px;
+  text-wrap: balance;
 }
 
 .page-hero p {
@@ -1745,14 +1750,14 @@ a.gallery-item:hover,
 .author-work-card-actions .btn-sm {
   flex: 1 1 0;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 12px 8px;
   font-size: 0.74rem;
   white-space: nowrap;
   text-align: center;
 }
 
 .author-work-card-wrap--draft .author-work-card-actions .btn-sm {
-  padding: 6px 6px;
+  padding: 12px 6px;
   font-size: 0.72rem;
 }
 
@@ -2679,7 +2684,6 @@ a.news-item:hover {
 
   .carousel-btn.prev { left: 10px; }
   .carousel-btn.next { right: 10px; }
-}
 
   .gallery-masonry {
     column-count: 3;
@@ -2748,11 +2752,22 @@ a.news-item:hover {
 
   .header-auth-group .btn-auth {
     padding: 6px 10px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 0.75rem;
+  }
+
+  .nav-toggle {
+    padding: 14px 11px;
   }
 
   .nav-mine {
     padding: 6px 10px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
     font-size: 0.8rem;
   }
 
@@ -2807,5 +2822,10 @@ a.news-item:hover {
 
   .author-profile-avatar {
     margin: 0 auto;
+  }
+
+  /* 移动端 hero 标题一行能放下时不换行：中文无词界，balance 也会从字中断开 */
+  .page-hero h1 {
+    font-size: clamp(1.5rem, 7vw, 2rem);
   }
 }
