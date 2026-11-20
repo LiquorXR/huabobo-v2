@@ -81,6 +81,17 @@ GitHub 仓库 `Settings → Environments → production → Environment secrets`
 | `SSH_PORT` | 可选，默认 `22` |
 | `DEPLOY_DIR` | 如 `/opt/huabobo-v2` |
 
+**`SSH_KEY` 生成方式（在服务器上执行一次，私钥只用于部署）：**
+
+```
+ssh-keygen -t ed25519 -f ~/.ssh/huabobo-deploy -N "" -C "github-deploy"
+cat ~/.ssh/huabobo-deploy.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+cat ~/.ssh/huabobo-deploy   # 全文贴到 SSH_KEY secret（含首尾 BEGIN/END 行）
+```
+
+换服务器时在新机器上重跑一遍，把新私钥 Update 到 `SSH_KEY` 即可；过渡期把新公钥也追加到旧机器，secret 换新后两台都能连。
+
 生产 `.env` 建议再加 `SKIP_SEED_OVERWRITE=1`（只补缺失示例数据，不覆盖管理员改过的新闻/艺人）。本地/CI 不设，保持原行为。
 
 **可选功能：数字人语音 / 识图点评**
