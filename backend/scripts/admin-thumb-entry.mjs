@@ -149,9 +149,255 @@ async function generateModelThumbnailFromGlb(file, size) {
   }
 }
 
+function fitHumanModel(model) {
+  model.updateMatrixWorld(true);
+  var box = new THREE.Box3().setFromObject(model);
+  if (box.isEmpty()) throw new Error('模型几何为空');
+  var size = box.getSize(new THREE.Vector3());
+  var height = Math.max(size.y, 0.001);
+  var scale = 1.8 / height;
+  model.scale.multiplyScalar(scale);
+  model.updateMatrixWorld(true);
+  box.setFromObject(model);
+  model.position.y -= box.min.y;
+  model.position.x -= (box.min.x + box.max.x) / 2;
+  model.position.z -= (box.min.z + box.max.z) / 2;
+  model.updateMatrixWorld(true);
+}
+
+function frameHumanCamera(camera, aspect) {
+  var frameTop = 1.9;
+  var frameBottom = 0.52;
+  var minWidth = 0.92;
+  var vExtent = frameTop - frameBottom;
+  var centerY = (frameTop + frameBottom) / 2;
+  var halfFov = (camera.fov * Math.PI) / 360;
+  var distV = vExtent / 2 / Math.tan(halfFov);
+  var visibleWidth = vExtent * aspect;
+  var distH =
+    visibleWidth >= minWidth ? 0 : minWidth / 2 / (Math.tan(halfFov) * aspect);
+  var dist = Math.max(distV, distH);
+  camera.aspect = aspect;
+  camera.near = 0.01;
+  camera.far = 50;
+  camera.position.set(0, centerY + 0.1, dist);
+  camera.lookAt(0, centerY + 0.02, 0);
+  camera.updateProjectionMatrix();
+}
+
+function addHumanLights(scene) {
+  scene.add(new THREE.AmbientLight(0xffffff, 1.35));
+  var hemi = new THREE.HemisphereLight(0xffffff, 0xa89880, 1.0);
+  scene.add(hemi);
+  var key = new THREE.DirectionalLight(0xfff4e8, 1.0);
+  key.position.set(1.6, 2.6, 2.4);
+  scene.add(key);
+  var fill = new THREE.DirectionalLight(0xb8c4d4, 0.35);
+  fill.position.set(-1.8, 1.2, -1.6);
+  scene.add(fill);
+}
+
+async function generateDigitalHumanThumbnail(fileOrUrl, options) {
+  options = options || {};
+  var width = options.width || 360;
+  var height = options.height || 480;
+  var isFile = typeof fileOrUrl !== 'string';
+  var url = isFile ? URL.createObjectURL(fileOrUrl) : String(fileOrUrl);
+  var renderer;
+  var scene;
+  var holder;
+  try {
+    scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(30, width / height, 0.01, 50);
+    renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      preserveDrawingBuffer: true,
+      alpha: true,
+      powerPreference: 'high-performance'
+    });
+    renderer.setSize(width, height, false);
+    renderer.setPixelRatio(1);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0x000000, 0);
+
+    holder = document.createElement('div');
+    holder.setAttribute('aria-hidden', 'true');
+    holder.style.cssText =
+      'position:fixed;left:-9999px;top:0;width:' +
+      width +
+      'px;height:' +
+      height +
+      'px;overflow:hidden;pointer-events:none;opacity:0;';
+    holder.appendChild(renderer.domElement);
+    document.body.appendChild(holder);
+
+    addHumanLights(scene);
+
+    var loader = new GLTFLoader();
+    loader.setCrossOrigin('anonymous');
+    var gltf = await loader.loadAsync(url);
+    var model = gltf.scene;
+    model.traverse(function (child) {
+      if (child.isMesh) {
+        child.frustumCulled = false;
+        var mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(function (mat) {
+          if (!mat) return;
+          mat.side = THREE.DoubleSide;
+          if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+        });
+      }
+    });
+    fitHumanModel(model);
+    scene.add(model);
+    frameHumanCamera(camera, width / height);
+
+    renderer.render(scene, camera);
+    await waitFrame();
+    renderer.render(scene, camera);
+
+    var blob = await canvasToPngBlob(renderer.domElement);
+    if (!blob || !blob.size) throw new Error('缩略图为空');
+    return blob;
+  } finally {
+    if (isFile) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {}
+    }
+    if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+    if (renderer) {
+      renderer.dispose();
+      var gl = renderer.getContext && renderer.getContext();
+      var lose = gl && gl.getExtension && gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+    }
+    if (scene) disposeObject3D(scene);
+  }
+}
+
+/**
+ * 后台预览：容器背景由调用方设置，画布透明，模型居中自转。
+ * 返回 { ready: Promise<boolean>, dispose() }。
+ */
+function createDigitalHumanPreview(container, options) {
+  options = options || {};
+  var glbUrl = options.glbUrl;
+  if (!container || !glbUrl) {
+    return {
+      ready: Promise.reject(new Error('缺少预览模型地址')),
+      dispose: function () {}
+    };
+  }
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(30, 0.8, 0.01, 50);
+  var renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    powerPreference: 'low-power'
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x000000, 0);
+  addHumanLights(scene);
+
+  container.innerHTML = '';
+  container.appendChild(renderer.domElement);
+  var root = null;
+  var raf = 0;
+  var disposed = false;
+  var lastFrame = 0;
+  var clock = 0;
+  var resizeObserver = null;
+
+  function size() {
+    var width = Math.max(container.clientWidth || 320, 240);
+    var height = Math.max(container.clientHeight || 400, 320);
+    renderer.setSize(width, height, true);
+    frameHumanCamera(camera, width / height);
+    return { width: width, height: height };
+  }
+
+  size();
+  if (window.ResizeObserver) {
+    resizeObserver = new ResizeObserver(function () {
+      if (!disposed) size();
+    });
+    resizeObserver.observe(container);
+  }
+
+  function tick(now) {
+    if (disposed) return;
+    raf = requestAnimationFrame(tick);
+    var dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
+    lastFrame = now;
+    clock += dt;
+    if (root) root.rotation.y += dt * 0.25;
+    renderer.render(scene, camera);
+  }
+
+  var api = {
+    ready: null,
+    dispose: function () {
+      if (disposed) return;
+      disposed = true;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
+      if (root) {
+        scene.remove(root);
+        root = null;
+      }
+      disposeObject3D(scene);
+      renderer.dispose();
+      var gl = renderer.getContext && renderer.getContext();
+      var lose = gl && gl.getExtension && gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      if (renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+    }
+  };
+
+  api.ready = (async function () {
+    var loader = new GLTFLoader();
+    loader.setCrossOrigin('anonymous');
+    var gltf = await loader.loadAsync(glbUrl);
+    if (disposed) return false;
+    root = gltf.scene;
+    root.traverse(function (child) {
+      if (child.isMesh) {
+        child.frustumCulled = false;
+        var mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(function (mat) {
+          if (!mat) return;
+          mat.side = THREE.DoubleSide;
+          if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+        });
+      }
+    });
+    fitHumanModel(root);
+    scene.add(root);
+    size();
+    raf = requestAnimationFrame(tick);
+    return true;
+  })().catch(function (err) {
+    api.dispose();
+    throw err;
+  });
+
+  return api;
+}
+
 globalThis.AdminModelThumb = {
   ready: true,
   error: null,
   bootPromise: null,
-  generateModelThumbnailFromGlb: generateModelThumbnailFromGlb
+  generateModelThumbnailFromGlb: generateModelThumbnailFromGlb,
+  generateDigitalHumanThumbnail: generateDigitalHumanThumbnail,
+  createDigitalHumanPreview: createDigitalHumanPreview
 };

@@ -112,6 +112,22 @@ const studioModels = pgTable('studio_models', {
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
 }, (t) => [index('studio_models_enabled_idx').on(t.enabled)]);
 
+const digitalHumans = pgTable('digital_humans', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  gender: text('gender').notNull().default('female'),
+  glbUrl: text('glb_url').notNull(),
+  thumbnail: text('thumbnail').notNull().default(''),
+  backgroundType: text('background_type').notNull().default('color'),
+  backgroundColor: text('background_color').notNull().default('#f3ebe0'),
+  backgroundImage: text('background_image').notNull().default(''),
+  enabled: boolean('enabled').notNull().default(false),
+  rigInfo: text('rig_info').notNull().default('{}'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
+}, (t) => [index('digital_humans_enabled_idx').on(t.enabled)]);
+
 const aboutPages = pgTable('about_pages', {
   id: text('id').primaryKey(),
   key: text('key').notNull().unique(),
@@ -151,6 +167,7 @@ module.exports = {
   artisans,
   studioModels,
   studioModelCategories,
+  digitalHumans,
   aboutPages,
   printOrders
 };

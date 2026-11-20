@@ -65,6 +65,8 @@ docker compose ps                   # 三个容器都 Up 才算正常
 # OPENAI_BASE_URL=服务商 Base URL（如智谱 https://open.bigmodel.cn/api/paas/v4）
 # OPENAI_MODEL=识图点评共用模型（如 glm-5.3-flash）
 # OPENAI_THINKING=思考开关（enabled/low/留空关闭）
+# OPENAI_TTS_VOICE_FEMALE=tongtong   # 女性数字人音色
+# OPENAI_TTS_VOICE_MALE=xiaochen     # 男性数字人音色
 docker compose up -d --build
 ```
 
@@ -117,6 +119,8 @@ npm start
    - 合作艺人：新增 / 修改前台展示的手艺人
    - 作品与留言：查看用户发布的作品，删除不当留言
    - 模型库：上传 DIY 工作台用的 `.glb` 模型（可顺手传一张缩略图，没有也行，打开一次会自动补）
+   - 数字人管理：上传带 Mixamo 骨骼的 GLB 数字人，设置名称、性别（绑定男/女声）、背景和启用状态；同一时间只能启用一个，前端只加载启用的那个
+     - 首次上线：新增「饽饽小匠」→ 性别女 → 背景纯色 `#f3ebe0` → 上传仓库里的 `frontend/models/avatar/shaded.glb` → 勾选启用
    - 关于我们：修改前台“关于我们”页面的文字和图片
    - 用户：查注册用户、重置密码
 3. 发布的东西前台实时生效，不用重启

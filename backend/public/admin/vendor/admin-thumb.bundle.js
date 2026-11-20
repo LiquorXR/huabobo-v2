@@ -1,5 +1,5 @@
 var AdminModelThumbBundle = (() => {
-  // 后台代码/node_modules/three/build/three.module.js
+  // public/admin/vendor/three/build/three.module.js
   var REVISION = "160";
   var CullFaceNone = 0;
   var CullFaceBack = 1;
@@ -20152,6 +20152,21 @@ var AdminModelThumbBundle = (() => {
       return data;
     }
   };
+  var HemisphereLight = class extends Light {
+    constructor(skyColor, groundColor, intensity) {
+      super(skyColor, intensity);
+      this.isHemisphereLight = true;
+      this.type = "HemisphereLight";
+      this.position.copy(Object3D.DEFAULT_UP);
+      this.updateMatrix();
+      this.groundColor = new Color(groundColor);
+    }
+    copy(source, recursive) {
+      super.copy(source, recursive);
+      this.groundColor.copy(source.groundColor);
+      return this;
+    }
+  };
   var _projScreenMatrix$1 = /* @__PURE__ */ new Matrix4();
   var _lightPositionWorld$1 = /* @__PURE__ */ new Vector3();
   var _lookTarget$1 = /* @__PURE__ */ new Vector3();
@@ -20920,7 +20935,7 @@ var AdminModelThumbBundle = (() => {
     }
   }
 
-  // 后台代码/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
+  // public/admin/vendor/three/examples/jsm/utils/BufferGeometryUtils.js
   function toTrianglesDrawMode(geometry, drawMode) {
     if (drawMode === TrianglesDrawMode) {
       console.warn("THREE.BufferGeometryUtils.toTrianglesDrawMode(): Geometry already defined as triangles.");
@@ -20976,7 +20991,7 @@ var AdminModelThumbBundle = (() => {
     }
   }
 
-  // 后台代码/node_modules/three/examples/jsm/loaders/GLTFLoader.js
+  // public/admin/vendor/three/examples/jsm/loaders/GLTFLoader.js
   var GLTFLoader = class extends Loader {
     constructor(manager) {
       super(manager);
@@ -23427,7 +23442,7 @@ var AdminModelThumbBundle = (() => {
     });
   }
 
-  // 后台代码/scripts/admin-thumb-entry.mjs
+  // scripts/admin-thumb-entry.mjs
   function disposeObject3D(obj) {
     if (!obj) return;
     obj.traverse(function(child) {
@@ -23565,19 +23580,235 @@ var AdminModelThumbBundle = (() => {
       if (scene) disposeObject3D(scene);
     }
   }
+  function fitHumanModel(model) {
+    model.updateMatrixWorld(true);
+    var box = new Box3().setFromObject(model);
+    if (box.isEmpty()) throw new Error("\u6A21\u578B\u51E0\u4F55\u4E3A\u7A7A");
+    var size = box.getSize(new Vector3());
+    var height = Math.max(size.y, 1e-3);
+    var scale = 1.8 / height;
+    model.scale.multiplyScalar(scale);
+    model.updateMatrixWorld(true);
+    box.setFromObject(model);
+    model.position.y -= box.min.y;
+    model.position.x -= (box.min.x + box.max.x) / 2;
+    model.position.z -= (box.min.z + box.max.z) / 2;
+    model.updateMatrixWorld(true);
+  }
+  function frameHumanCamera(camera, aspect2) {
+    var frameTop = 1.9;
+    var frameBottom = 0.52;
+    var minWidth = 0.92;
+    var vExtent = frameTop - frameBottom;
+    var centerY = (frameTop + frameBottom) / 2;
+    var halfFov = camera.fov * Math.PI / 360;
+    var distV = vExtent / 2 / Math.tan(halfFov);
+    var visibleWidth = vExtent * aspect2;
+    var distH = visibleWidth >= minWidth ? 0 : minWidth / 2 / (Math.tan(halfFov) * aspect2);
+    var dist = Math.max(distV, distH);
+    camera.aspect = aspect2;
+    camera.near = 0.01;
+    camera.far = 50;
+    camera.position.set(0, centerY + 0.1, dist);
+    camera.lookAt(0, centerY + 0.02, 0);
+    camera.updateProjectionMatrix();
+  }
+  function addHumanLights(scene) {
+    scene.add(new AmbientLight(16777215, 1.35));
+    var hemi = new HemisphereLight(16777215, 11049088, 1);
+    scene.add(hemi);
+    var key = new DirectionalLight(16774376, 1);
+    key.position.set(1.6, 2.6, 2.4);
+    scene.add(key);
+    var fill = new DirectionalLight(12109012, 0.35);
+    fill.position.set(-1.8, 1.2, -1.6);
+    scene.add(fill);
+  }
+  async function generateDigitalHumanThumbnail(fileOrUrl, options) {
+    options = options || {};
+    var width = options.width || 360;
+    var height = options.height || 480;
+    var isFile = typeof fileOrUrl !== "string";
+    var url = isFile ? URL.createObjectURL(fileOrUrl) : String(fileOrUrl);
+    var renderer;
+    var scene;
+    var holder;
+    try {
+      scene = new Scene();
+      var camera = new PerspectiveCamera(30, width / height, 0.01, 50);
+      renderer = new WebGLRenderer({
+        antialias: true,
+        preserveDrawingBuffer: true,
+        alpha: true,
+        powerPreference: "high-performance"
+      });
+      renderer.setSize(width, height, false);
+      renderer.setPixelRatio(1);
+      renderer.outputColorSpace = SRGBColorSpace;
+      renderer.setClearColor(0, 0);
+      holder = document.createElement("div");
+      holder.setAttribute("aria-hidden", "true");
+      holder.style.cssText = "position:fixed;left:-9999px;top:0;width:" + width + "px;height:" + height + "px;overflow:hidden;pointer-events:none;opacity:0;";
+      holder.appendChild(renderer.domElement);
+      document.body.appendChild(holder);
+      addHumanLights(scene);
+      var loader = new GLTFLoader();
+      loader.setCrossOrigin("anonymous");
+      var gltf = await loader.loadAsync(url);
+      var model = gltf.scene;
+      model.traverse(function(child) {
+        if (child.isMesh) {
+          child.frustumCulled = false;
+          var mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(function(mat) {
+            if (!mat) return;
+            mat.side = DoubleSide;
+            if (mat.map) mat.map.colorSpace = SRGBColorSpace;
+          });
+        }
+      });
+      fitHumanModel(model);
+      scene.add(model);
+      frameHumanCamera(camera, width / height);
+      renderer.render(scene, camera);
+      await waitFrame();
+      renderer.render(scene, camera);
+      var blob = await canvasToPngBlob(renderer.domElement);
+      if (!blob || !blob.size) throw new Error("\u7F29\u7565\u56FE\u4E3A\u7A7A");
+      return blob;
+    } finally {
+      if (isFile) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (e) {
+        }
+      }
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+      if (renderer) {
+        renderer.dispose();
+        var gl = renderer.getContext && renderer.getContext();
+        var lose = gl && gl.getExtension && gl.getExtension("WEBGL_lose_context");
+        if (lose) lose.loseContext();
+      }
+      if (scene) disposeObject3D(scene);
+    }
+  }
+  function createDigitalHumanPreview(container, options) {
+    options = options || {};
+    var glbUrl = options.glbUrl;
+    if (!container || !glbUrl) {
+      return {
+        ready: Promise.reject(new Error("\u7F3A\u5C11\u9884\u89C8\u6A21\u578B\u5730\u5740")),
+        dispose: function() {
+        }
+      };
+    }
+    var scene = new Scene();
+    var camera = new PerspectiveCamera(30, 0.8, 0.01, 50);
+    var renderer = new WebGLRenderer({
+      alpha: true,
+      antialias: true,
+      powerPreference: "low-power"
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = SRGBColorSpace;
+    renderer.setClearColor(0, 0);
+    addHumanLights(scene);
+    container.innerHTML = "";
+    container.appendChild(renderer.domElement);
+    var root = null;
+    var raf = 0;
+    var disposed = false;
+    var lastFrame = 0;
+    var clock = 0;
+    var resizeObserver = null;
+    function size() {
+      var width = Math.max(container.clientWidth || 320, 240);
+      var height = Math.max(container.clientHeight || 400, 320);
+      renderer.setSize(width, height, true);
+      frameHumanCamera(camera, width / height);
+      return { width, height };
+    }
+    size();
+    if (window.ResizeObserver) {
+      resizeObserver = new ResizeObserver(function() {
+        if (!disposed) size();
+      });
+      resizeObserver.observe(container);
+    }
+    function tick(now) {
+      if (disposed) return;
+      raf = requestAnimationFrame(tick);
+      var dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1e3) : 0.016;
+      lastFrame = now;
+      clock += dt;
+      if (root) root.rotation.y += dt * 0.25;
+      renderer.render(scene, camera);
+    }
+    var api = {
+      ready: null,
+      dispose: function() {
+        if (disposed) return;
+        disposed = true;
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        if (resizeObserver) {
+          resizeObserver.disconnect();
+          resizeObserver = null;
+        }
+        if (root) {
+          scene.remove(root);
+          root = null;
+        }
+        disposeObject3D(scene);
+        renderer.dispose();
+        var gl = renderer.getContext && renderer.getContext();
+        var lose = gl && gl.getExtension && gl.getExtension("WEBGL_lose_context");
+        if (lose) lose.loseContext();
+        if (renderer.domElement && renderer.domElement.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+      }
+    };
+    api.ready = (async function() {
+      var loader = new GLTFLoader();
+      loader.setCrossOrigin("anonymous");
+      var gltf = await loader.loadAsync(glbUrl);
+      if (disposed) return false;
+      root = gltf.scene;
+      root.traverse(function(child) {
+        if (child.isMesh) {
+          child.frustumCulled = false;
+          var mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(function(mat) {
+            if (!mat) return;
+            mat.side = DoubleSide;
+            if (mat.map) mat.map.colorSpace = SRGBColorSpace;
+          });
+        }
+      });
+      fitHumanModel(root);
+      scene.add(root);
+      size();
+      raf = requestAnimationFrame(tick);
+      return true;
+    })().catch(function(err) {
+      api.dispose();
+      throw err;
+    });
+    return api;
+  }
   globalThis.AdminModelThumb = {
     ready: true,
     error: null,
     bootPromise: null,
-    generateModelThumbnailFromGlb
+    generateModelThumbnailFromGlb,
+    generateDigitalHumanThumbnail,
+    createDigitalHumanPreview
   };
 })();
-/*! Bundled license information:
-
-three/build/three.module.js:
-  (**
-   * @license
-   * Copyright 2010-2023 Three.js Authors
-   * SPDX-License-Identifier: MIT
-   *)
-*/
+/**
+ * @license
+ * Copyright 2010-2023 Three.js Authors
+ * SPDX-License-Identifier: MIT
+ */

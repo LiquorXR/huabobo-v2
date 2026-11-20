@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
-import { createHumanAvatar } from './avatar-human.js?v=20261115';
+import { createHumanAvatar } from './avatar-human.js?v=20261120a';
 
 function canRunStudio() {
   if (typeof Api !== 'undefined' && !Api.isLoggedIn()) {
@@ -135,6 +135,8 @@ let humanSpeakTimer = 0;
 let humanSpeakStepTimer = 0;
 let humanSpeakToken = 0;
 let humanVoice = null;
+let humanGender = 'female';
+let activeHumanConfig = null;
 let humanAvatar = null;
 let realReviewStream = null;
 let lastRealRecognition = null;
@@ -1966,8 +1968,75 @@ function showHumanPoster() {
   if (humanFigureEl) humanFigureEl.classList.remove('is-3d', 'is-loading');
 }
 
-function initHumanAvatar() {
+function resolveMediaUrl(url) {
+  if (!url) return '';
+  if (typeof ZJS !== 'undefined' && ZJS.normalizeMediaUrl) return ZJS.normalizeMediaUrl(url);
+  if (/^https?:\/\//i.test(url) || /^data:/i.test(url)) return url;
+  return url;
+}
+
+function normalizeActiveHuman(data) {
+  if (!data) return null;
+  const bg = data.background || {};
+  return {
+    id: data.id || '',
+    name: data.name || '数字人',
+    gender: data.gender === 'male' ? 'male' : 'female',
+    glbUrl: data.glbUrl || '',
+    thumbnail: data.thumbnail || '',
+    background: {
+      type: bg.type === 'image' ? 'image' : 'color',
+      color: bg.color || '#f3ebe0',
+      image: bg.image || ''
+    }
+  };
+}
+
+async function loadActiveDigitalHuman() {
+  const base = apiBase();
+  if (!base) return null;
+  try {
+    const res = await fetch(base + '/api/digital-humans/active', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json || !json.ok) return null;
+    return normalizeActiveHuman(json.data);
+  } catch (e) {
+    console.warn('[studio] 数字人配置加载失败，使用默认形象', e);
+    return null;
+  }
+}
+
+function applyHumanBackground(active) {
+  if (!humanFigureEl) return;
+  if (!active) {
+    humanFigureEl.style.background = '';
+    return;
+  }
+  const bg = active.background || {};
+  const image = bg.type === 'image' ? resolveMediaUrl(bg.image) : '';
+  if (image) {
+    humanFigureEl.style.background =
+      'url("' + image + '") center / cover no-repeat, ' + (bg.color || '#f3ebe0');
+  } else {
+    humanFigureEl.style.background = bg.color || '#f3ebe0';
+  }
+}
+
+function initHumanAvatar(active) {
   if (!humanCanvasEl) return;
+  activeHumanConfig = active || null;
+  humanGender = active && active.gender === 'male' ? 'male' : 'female';
+
+  if (humanPosterEl) {
+    humanPosterEl.src = active && active.thumbnail
+      ? resolveMediaUrl(active.thumbnail)
+      : 'images/studio-digital-human.jpg';
+    humanPosterEl.alt = active
+      ? active.name + ' AI 数字人'
+      : 'AI非遗数字传承人饽饽小匠';
+  }
+
   // 只有慢加载（>350ms）才显示占位；本地秒开时不会闪一下
   const hintTimer = window.setTimeout(function () {
     if (humanFigureEl && !humanFigureEl.classList.contains('is-3d')) {
@@ -1976,7 +2045,10 @@ function initHumanAvatar() {
   }, 350);
 
   try {
-    humanAvatar = createHumanAvatar({ canvas: humanCanvasEl });
+    humanAvatar = createHumanAvatar({
+      canvas: humanCanvasEl,
+      modelUrl: active && active.glbUrl ? resolveMediaUrl(active.glbUrl) : undefined
+    });
   } catch (e) {
     window.clearTimeout(hintTimer);
     console.warn('[studio] 数字人 3D 初始化失败，回退静态图', e);
@@ -2031,17 +2103,24 @@ function stopHumanSpeech() {
   if (humanFigureEl) humanFigureEl.classList.remove('is-speaking');
 }
 
-function pickHumanVoice() {
+function pickHumanVoice(gender) {
   if (!window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices() || [];
   if (!voices.length) return null;
+  const wantMale = gender === 'male';
+  const femaleRe = /female|女|ting|xiao|huihui|yaoyao|meijia|mei-jia|hanhan|yunxia|xiaoyan|xiaoyi|xiaoxiao|nova|shimmer/i;
+  const maleRe = /male|男|xiaochen|yunxi|yunjian|kangkang|liang|david|mark|onyx|echo/i;
   function score(v) {
     const n = ((v && v.name) || '') + ' ' + ((v && v.lang) || '');
     let s = 0;
     if (/zh|cmn|chinese|中文|普通话/i.test(n)) s += 12;
     if (/zh-CN|cmn-Hans|zh_CN/i.test((v && v.lang) || '')) s += 10;
-    if (/female|女|ting|xiao|huihui|yaoyao|meijia|mei-jia|hanhan|yunxia|xiaoyan|xiaoyi|xiaoxiao/i.test(n)) {
-      s += 16;
+    if (wantMale) {
+      if (maleRe.test(n)) s += 24;
+      if (femaleRe.test(n)) s -= 16;
+    } else {
+      if (femaleRe.test(n)) s += 18;
+      if (maleRe.test(n)) s -= 12;
     }
     if (/Google/.test(n) && /Chinese|Mandarin|普通话|中文/.test(n)) s += 8;
     if (/Microsoft/.test(n)) s += 5;
@@ -2056,7 +2135,7 @@ function pickHumanVoice() {
 }
 
 function ensureHumanVoice() {
-  humanVoice = pickHumanVoice() || humanVoice;
+  humanVoice = pickHumanVoice(humanGender) || humanVoice;
   return humanVoice;
 }
 
@@ -3971,7 +4050,9 @@ async function boot() {
   setupLibraryDialog();
   setupMobileHintCard();
   setupStudioSheet();
-  initHumanAvatar();
+  const activeHuman = await loadActiveDigitalHuman();
+  applyHumanBackground(activeHuman);
+  initHumanAvatar(activeHuman);
   setupHumanInteraction();
   setInterval(refreshModelLibrary, 8000);
   document.addEventListener('visibilitychange', function () {

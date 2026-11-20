@@ -4,6 +4,8 @@
  *   npm run seed && (node src/index.js &>/tmp/srv.log & echo $! > /tmp/srv.pid) && sleep 6 && node scripts/smoke.js; code=$?; kill $(cat /tmp/srv.pid); exit $code
  */
 const BASE = process.env.SMOKE_BASE || 'http://127.0.0.1:3000';
+const fs = require('fs');
+const path = require('path');
 
 let failures = 0;
 function check(name, cond, extra) {
@@ -182,6 +184,108 @@ async function req(method, path, body, token) {
   check('model thumbnail 200 (user token)', r.status === 200, r);
   r = await req('POST', '/api/studio-models/' + mid + '/thumbnail', { thumbnailBase64: DATA_URL_PNG });
   check('model thumbnail no token 401', r.status === 401, r);
+
+  // 数字人管理：真实 GLB、单活、背景、性别与删除
+  const humanGlb = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'frontend', 'models', 'avatar', 'shaded.glb')
+  );
+  const humanFiles = {
+    glb: { data: humanGlb, type: 'model/gltf-binary', filename: 'shaded.glb' }
+  };
+  r = await req('GET', '/api/digital-humans/active');
+  check('digital human active public 200', r.status === 200 && r.data && r.data.ok === true, r.data);
+  const initialActiveId = r.data && r.data.data ? r.data.data.id : '';
+
+  r = await reqForm('POST', '/api/admin/digital-humans', { name: 'CI数字人' }, {
+    glb: { data: Buffer.from('not-a-glb'), type: 'application/octet-stream', filename: 'bad.glb' }
+  }, 'bad-token');
+  check('digital human admin requires token 401', r.status === 401, r.status);
+
+  r = await reqForm('POST', '/api/admin/digital-humans', { name: '坏模型' }, {
+    glb: { data: Buffer.from('not-a-glb'), type: 'application/octet-stream', filename: 'bad.glb' }
+  });
+  check('digital human invalid glb 400', r.status === 400, r);
+
+  r = await reqForm('POST', '/api/admin/digital-humans', {
+    name: 'CI女数字人',
+    gender: 'female',
+    backgroundType: 'color',
+    backgroundColor: '#f3ebe0',
+    enabled: 'true'
+  }, humanFiles);
+  check(
+    'digital human create 201 + rig detected',
+    r.status === 201 && r.data.data && r.data.data.enabled === true &&
+      r.data.data.rigInfo && r.data.data.rigInfo.boneCount >= 20,
+    r.data
+  );
+  const humanF = r.data.data && r.data.data.id;
+
+  r = await req('GET', '/api/digital-humans/active');
+  check(
+    'digital human active returns created',
+    r.status === 200 && r.data.data && r.data.data.id === humanF && r.data.data.gender === 'female',
+    r.data
+  );
+
+  r = await reqForm('POST', '/api/admin/digital-humans', {
+    name: 'CI男数字人',
+    gender: 'male',
+    backgroundType: 'image',
+    backgroundColor: '#dde8f0',
+    enabled: 'true'
+  }, {
+    glb: humanFiles.glb,
+    backgroundImage: { data: PNG, type: 'image/png', filename: 'bg.png' }
+  });
+  check(
+    'digital human second create + image bg',
+    r.status === 201 && r.data.data && r.data.data.background.type === 'image' &&
+      r.data.data.background.image.indexOf('/uploads/digital-humans/backgrounds/') >= 0,
+    r.data
+  );
+  const humanM = r.data.data && r.data.data.id;
+
+  r = await req('GET', '/api/digital-humans/active');
+  check('digital human single active switches', r.status === 200 && r.data.data && r.data.data.id === humanM, r.data);
+
+  r = await reqForm('PUT', '/api/admin/digital-humans/' + humanM, {
+    name: 'CI男数字人改',
+    gender: 'female',
+    backgroundType: 'color',
+    backgroundColor: '#112233',
+    enabled: 'true'
+  }, {});
+  check(
+    'digital human update 200',
+    r.status === 200 && r.data.data && r.data.data.name === 'CI男数字人改' &&
+      r.data.data.gender === 'female' && r.data.data.background.type === 'color',
+    r.data
+  );
+
+  r = await req('POST', '/api/admin/digital-humans/' + humanF + '/activate', undefined, token);
+  check('digital human activate 200', r.status === 200 && r.data.data && r.data.data.enabled === true, r.data);
+  r = await req('GET', '/api/digital-humans/active');
+  check('digital human active after activate', r.status === 200 && r.data.data && r.data.data.id === humanF, r.data);
+
+  r = await req('DELETE', '/api/admin/digital-humans/' + humanF, undefined, token);
+  check('digital human delete 200', r.status === 200, r);
+  r = await req('DELETE', '/api/admin/digital-humans/' + humanM, undefined, token);
+  check('digital human second delete 200', r.status === 200, r);
+
+  if (initialActiveId) {
+    r = await req('POST', '/api/admin/digital-humans/' + initialActiveId + '/activate', undefined, token);
+    check('digital human initial active restored', r.status === 200, r);
+    r = await req('GET', '/api/digital-humans/active');
+    check(
+      'digital human active restored',
+      r.status === 200 && r.data.data && r.data.data.id === initialActiveId,
+      r.data
+    );
+  } else {
+    r = await req('GET', '/api/digital-humans/active');
+    check('digital human active null after delete', r.status === 200 && r.data.data === null, r.data);
+  }
 
   r = await req('PATCH', '/api/users/' + uid + '/profile', { nickname: 'CI2' }, utoken);
   check('profile update own 200', r.status === 200 && r.data.data && r.data.data.nickname === 'CI2', r.data);

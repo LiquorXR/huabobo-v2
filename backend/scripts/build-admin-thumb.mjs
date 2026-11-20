@@ -1,22 +1,23 @@
-import * as esbuild from 'esbuild';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { build } from 'esbuild';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.join(__dirname, '..');
-const entry = path.join(root, 'scripts', 'admin-thumb-entry.mjs');
-const outfile = path.join(root, 'public', 'admin', 'vendor', 'admin-thumb.bundle.js');
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const backendDir = path.join(scriptDir, '..');
 
-await esbuild.build({
-  entryPoints: [entry],
+await build({
+  entryPoints: [path.join(scriptDir, 'admin-thumb-entry.mjs')],
   bundle: true,
   format: 'iife',
   globalName: 'AdminModelThumbBundle',
-  outfile,
+  outfile: path.join(backendDir, 'public', 'admin', 'vendor', 'admin-thumb.bundle.js'),
   platform: 'browser',
   target: ['es2018'],
   minify: false,
-  define: { 'process.env.NODE_ENV': '"production"' }
+  define: { 'process.env.NODE_ENV': '"production"' },
+  alias: {
+    three: path.join(backendDir, 'public', 'admin', 'vendor', 'three', 'build', 'three.module.js'),
+    'three/addons': path.join(backendDir, 'public', 'admin', 'vendor', 'three', 'examples', 'jsm')
+  },
+  logLevel: 'info'
 });
-
-console.log('[ok] wrote', outfile);

@@ -31,23 +31,115 @@ const FRAME_BOTTOM = 0.52;
 /** 取景最小可视宽度（米），窄面板时不至于把人裁掉手臂 */
 const FRAME_MIN_WIDTH = 0.92;
 
-/** 骨骼名 → 候选名（模型换版本时按候选依次查找） */
-const BONE_MAP = {
-  hips: ['Hips'],
-  spine: ['Spine'],
-  spine1: ['Spine1'],
-  spine2: ['Spine2'],
-  neck: ['Neck'],
-  head: ['Head'],
-  shoulderL: ['LeftShoulder'],
-  shoulderR: ['RightShoulder'],
-  armL: ['LeftArm'],
-  armR: ['RightArm'],
-  foreL: ['LeftForeArm'],
-  foreR: ['RightForeArm'],
-  handL: ['LeftHand'],
-  handR: ['RightHand']
+/** 骨骼名归一化：Mixamo 允许 mixamorig: / Armature| 前缀，也兼容常见 Blender 命名 */
+const BONE_ALIASES = {
+  hips: 'hips',
+  hip: 'hips',
+  pelvis: 'hips',
+
+  spine: 'spine',
+  spine0: 'spine',
+
+  spine1: 'spine1',
+  spine01: 'spine1',
+  spine001: 'spine1',
+
+  spine2: 'spine2',
+  spine02: 'spine2',
+  spine002: 'spine2',
+  chest: 'spine2',
+  upperchest: 'spine2',
+
+  neck: 'neck',
+  head: 'head',
+
+  leftshoulder: 'shoulderL',
+  lshoulder: 'shoulderL',
+  shoulderl: 'shoulderL',
+  claviclel: 'shoulderL',
+  leftclavicle: 'shoulderL',
+
+  rightshoulder: 'shoulderR',
+  rshoulder: 'shoulderR',
+  shoulderr: 'shoulderR',
+  clavicler: 'shoulderR',
+  rightclavicle: 'shoulderR',
+
+  leftarm: 'armL',
+  leftupperarm: 'armL',
+  upperarml: 'armL',
+  lupperarm: 'armL',
+  arml: 'armL',
+  larm: 'armL',
+
+  rightarm: 'armR',
+  rightupperarm: 'armR',
+  upperarmr: 'armR',
+  rupperarm: 'armR',
+  armr: 'armR',
+  rarm: 'armR',
+
+  leftforearm: 'foreL',
+  leftlowerarm: 'foreL',
+  lowerarml: 'foreL',
+  lforearm: 'foreL',
+  forearml: 'foreL',
+
+  rightforearm: 'foreR',
+  rightlowerarm: 'foreR',
+  lowerarmr: 'foreR',
+  rforearm: 'foreR',
+  forearmr: 'foreR',
+
+  lefthand: 'handL',
+  lhand: 'handL',
+  handl: 'handL',
+  leftwrist: 'handL',
+
+  righthand: 'handR',
+  rhand: 'handR',
+  handr: 'handR',
+  rightwrist: 'handR'
 };
+
+const BONE_KEYS = [
+  'hips',
+  'spine',
+  'spine1',
+  'spine2',
+  'neck',
+  'head',
+  'shoulderL',
+  'shoulderR',
+  'armL',
+  'armR',
+  'foreL',
+  'foreR',
+  'handL',
+  'handR'
+];
+
+const REQUIRED_BONES = [
+  'hips',
+  'spine',
+  'spine1',
+  'spine2',
+  'neck',
+  'head',
+  'armL',
+  'armR',
+  'foreL',
+  'foreR'
+];
+
+function canonicalBoneKey(name) {
+  const raw = String(name || '')
+    .split(/[:|/]/)
+    .pop()
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase();
+  return BONE_ALIASES[raw] || '';
+}
 
 /** A-pose 基准：手臂方向（世界坐标，角色面朝 +Z，左手在 +X） */
 const A_L = [0.34, -1, 0.06];
@@ -300,6 +392,7 @@ export function createHumanAvatar(options) {
   let camera = null;
   let root = null;
   const bones = {};
+  let boneByKey = Object.create(null);
   const restQuat = new WeakMap();
   let rafId = 0;
   let lastFrame = 0;
@@ -372,12 +465,32 @@ export function createHumanAvatar(options) {
     camera.lookAt(0, centerY + 0.02, 0);
   }
 
-  function findBone(nameList) {
-    for (let i = 0; i < nameList.length; i++) {
-      const found = root.getObjectByName(nameList[i]);
-      if (found) return found;
-    }
-    return null;
+  /** 不同 GLB 的身高/单位/原点不一致：统一缩放到 1.8m，脚底落地，水平居中 */
+  function fitHumanModel() {
+    if (!root) return;
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root);
+    if (box.isEmpty()) return;
+    const size = box.getSize(new THREE.Vector3());
+    const height = Math.max(size.y, 0.001);
+    root.scale.multiplyScalar(1.8 / height);
+    root.updateMatrixWorld(true);
+    box.setFromObject(root);
+    root.position.y -= box.min.y;
+    root.position.x -= (box.min.x + box.max.x) / 2;
+    root.position.z -= (box.min.z + box.max.z) / 2;
+    root.updateMatrixWorld(true);
+  }
+
+  /** 按归一化后的骨骼名建立索引，兼容 mixamorig: / Armature| 等前缀 */
+  function indexBones() {
+    boneByKey = Object.create(null);
+    root.traverse(function (child) {
+      if (child.isBone || child.type === 'Bone') {
+        const key = canonicalBoneKey(child.name);
+        if (key && !boneByKey[key]) boneByKey[key] = child;
+      }
+    });
   }
 
   /** 欧拉小角度叠加：局部 rest * euler */
@@ -512,9 +625,21 @@ export function createHumanAvatar(options) {
             }
           });
           scene.add(root);
+          fitHumanModel();
+          indexBones();
 
-          Object.keys(BONE_MAP).forEach(function (key) {
-            bones[key] = findBone(BONE_MAP[key]);
+          const missing = REQUIRED_BONES.filter(function (key) {
+            return !boneByKey[key];
+          });
+          if (missing.length) {
+            console.warn('[avatar] 骨骼不兼容，缺少：' + missing.join(', '));
+            dispose();
+            resolve(false);
+            return;
+          }
+
+          BONE_KEYS.forEach(function (key) {
+            bones[key] = boneByKey[key] || null;
           });
           root.traverse(function (child) {
             if (child.isBone || child.type === 'Bone') restQuat.set(child, child.quaternion.clone());
@@ -543,6 +668,7 @@ export function createHumanAvatar(options) {
         undefined,
         function (err) {
           console.warn('[avatar] 数字人模型加载失败，回退静态图', err);
+          dispose();
           resolve(false);
         }
       );

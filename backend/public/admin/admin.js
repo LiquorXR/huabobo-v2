@@ -234,6 +234,7 @@
     document.body.classList.add('admin-guest');
     loginScreen.hidden = false;
     app.hidden = true;
+    if (typeof closeHumanPreview === 'function') closeHumanPreview();
     setToken('');
   }
 
@@ -1935,6 +1936,509 @@
     });
   }
 
+  var digitalHumans = [];
+  var editingHuman = null;
+  var humanThumbBlob = null;
+  var humanThumbPending = null;
+  var humanThumbGenId = 0;
+  var humanPreviewHandle = null;
+  var humanPreviewToken = 0;
+  var humanObjectUrls = [];
+
+  function rememberObjectUrl(url) {
+    if (url) humanObjectUrls.push(url);
+    return url;
+  }
+
+  function revokeHumanObjectUrls() {
+    humanObjectUrls.forEach(function (url) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {}
+    });
+    humanObjectUrls = [];
+  }
+
+  function findHuman(id) {
+    return digitalHumans.find(function (h) {
+      return h.id === id;
+    }) || null;
+  }
+
+  function humanThumbHtml(url) {
+    var src = adminUploadUrl(url);
+    if (!src) return '<span class="human-list-thumb human-list-thumb--empty">无图</span>';
+    return (
+      '<img class="human-list-thumb" src="' +
+      escapeHtml(src) +
+      '" alt="" loading="lazy" decoding="async">'
+    );
+  }
+
+  function humanBackgroundHtml(bg) {
+    if (!bg) return '';
+    if (bg.type === 'image' && bg.image) {
+      return (
+        '<span class="human-bg-cell"><img class="human-bg-thumb" src="' +
+        escapeHtml(adminUploadUrl(bg.image)) +
+        '" alt=""> 图片</span>'
+      );
+    }
+    return (
+      '<span class="human-bg-cell"><span class="human-bg-swatch" style="background:' +
+      escapeHtml(bg.color || '#f3ebe0') +
+      '"></span> 纯色</span>'
+    );
+  }
+
+  function renderDigitalHumans(list) {
+    var wrap = document.getElementById('humans-list');
+    if (!wrap) return;
+    if (!list.length) {
+      wrap.innerHTML =
+        '<p class="empty-hint">暂无数字人。未启用时，前端继续使用默认形象。</p>';
+      return;
+    }
+    wrap.innerHTML =
+      '<table class="data-table data-table-humans"><thead><tr>' +
+      '<th class="cell-thumb">缩略图</th><th>名称</th><th>性别</th><th>背景</th><th>状态</th><th>更新时间</th><th class="cell-actions">操作</th>' +
+      '</tr></thead><tbody>' +
+      list
+        .map(function (h) {
+          var enabled = !!h.enabled;
+          var gender = h.gender === 'male' ? '男' : '女';
+          var status = enabled
+            ? '<span class="badge badge-on">已启用</span>'
+            : '<span class="badge">未启用</span>';
+          var toggleLabel = enabled ? '停用' : '启用';
+          var toggleValue = enabled ? '0' : '1';
+          var rigWarn =
+            h.rigInfo && h.rigInfo.compatible === false
+              ? ' <span class="badge badge-warn">骨骼需检查</span>'
+              : '';
+          return (
+            '<tr><td class="cell-thumb">' +
+            humanThumbHtml(h.thumbnail) +
+            '</td><td>' +
+            escapeHtml(h.name) +
+            rigWarn +
+            '</td><td>' +
+            gender +
+            '</td><td>' +
+            humanBackgroundHtml(h.background) +
+            '</td><td>' +
+            status +
+            '</td><td>' +
+            escapeHtml(h.updatedAt || '') +
+            '</td><td class="cell-actions"><div class="table-actions">' +
+            '<button type="button" class="btn btn-ghost" data-preview-human="' +
+            escapeHtml(h.id) +
+            '">预览</button>' +
+            '<button type="button" class="btn btn-ghost" data-edit-human="' +
+            escapeHtml(h.id) +
+            '">编辑</button>' +
+            '<button type="button" class="btn btn-ghost" data-toggle-human="' +
+            toggleValue +
+            '" data-human-id="' +
+            escapeHtml(h.id) +
+            '">' +
+            toggleLabel +
+            '</button>' +
+            '<button type="button" class="btn btn-danger" data-del-human="' +
+            escapeHtml(h.id) +
+            '">删除</button>' +
+            '</div></td></tr>'
+          );
+        })
+        .join('') +
+      '</tbody></table>';
+
+    wrap.querySelectorAll('img.human-list-thumb, img.human-bg-thumb').forEach(function (img) {
+      img.addEventListener('error', function () {
+        img.style.visibility = 'hidden';
+      });
+    });
+    wrap.querySelectorAll('[data-preview-human]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        previewHumanRecord(btn.getAttribute('data-preview-human'));
+      });
+    });
+    wrap.querySelectorAll('[data-edit-human]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        openHumanForm(btn.getAttribute('data-edit-human'));
+      });
+    });
+    wrap.querySelectorAll('[data-toggle-human]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-human-id');
+        var enable = btn.getAttribute('data-toggle-human') === '1';
+        var human = findHuman(id);
+        var label = enable ? '启用' : '停用';
+        if (!confirm('确定' + label + '「' + (human ? human.name : '') + '」？' + (enable ? '\n启用后会自动停用其他数字人。' : ''))) return;
+        api('/api/admin/digital-humans/' + encodeURIComponent(id) + (enable ? '/activate' : '/deactivate'), {
+          method: 'POST'
+        })
+          .then(loadDigitalHumans)
+          .catch(function (err) {
+            alert(err.message || '操作失败');
+          });
+      });
+    });
+    wrap.querySelectorAll('[data-del-human]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-del-human');
+        var human = findHuman(id);
+        if (!confirm('确定删除「' + (human ? human.name : '') + '」？\n模型、背景图和缩略图会一起删除；若正在前端使用，将回退默认形象。')) return;
+        api('/api/admin/digital-humans/' + encodeURIComponent(id), { method: 'DELETE' })
+          .then(function () {
+            if (editingHuman && editingHuman.id === id) closeHumanForm();
+            return loadDigitalHumans();
+          })
+          .catch(function (err) {
+            alert(err.message || '删除失败');
+          });
+      });
+    });
+  }
+
+  function loadDigitalHumans() {
+    return api('/api/admin/digital-humans')
+      .then(function (res) {
+        digitalHumans = (res.data && res.data.list) || [];
+        renderDigitalHumans(digitalHumans);
+      })
+      .catch(function (err) {
+        var wrap = document.getElementById('humans-list');
+        if (wrap) {
+          wrap.innerHTML =
+            '<p class="empty-hint">加载失败：' + escapeHtml(err.message || '') + '</p>';
+        }
+      });
+  }
+
+  function setHumanGender(gender) {
+    document.querySelectorAll('input[name="human-gender"]').forEach(function (el) {
+      el.checked = el.value === gender;
+    });
+  }
+
+  function getHumanGender() {
+    var el = document.querySelector('input[name="human-gender"]:checked');
+    return el && el.value === 'male' ? 'male' : 'female';
+  }
+
+  function getHumanBgType() {
+    var el = document.querySelector('input[name="human-bg-type"]:checked');
+    return el && el.value === 'image' ? 'image' : 'color';
+  }
+
+  function setHumanBgType(type) {
+    document.querySelectorAll('input[name="human-bg-type"]').forEach(function (el) {
+      el.checked = el.value === type;
+    });
+    var row = document.getElementById('human-bg-image-row');
+    if (row) row.hidden = type !== 'image';
+    if (type !== 'image') {
+      showImagePreview(document.getElementById('human-bg-preview'), '');
+    } else if (
+      editingHuman &&
+      editingHuman.background &&
+      editingHuman.background.image &&
+      !(document.getElementById('human-bg-image').files || [])[0]
+    ) {
+      showImagePreview(
+        document.getElementById('human-bg-preview'),
+        adminUploadUrl(editingHuman.background.image)
+      );
+    }
+  }
+
+  function setHumanBgColor(value) {
+    var color = value || '#f3ebe0';
+    var input = document.getElementById('human-bg-color');
+    var label = document.getElementById('human-bg-color-value');
+    if (input) input.value = color;
+    if (label) label.textContent = color;
+  }
+
+  function setHumanThumbStatus(msg) {
+    var el = document.getElementById('human-thumb-status');
+    if (el) el.textContent = msg || '';
+  }
+
+  function setHumanGlbStatus(msg) {
+    var el = document.getElementById('human-glb-status');
+    if (el) el.textContent = msg || '';
+  }
+
+  function humanBackgroundForPreview() {
+    var type = getHumanBgType();
+    var color = document.getElementById('human-bg-color').value || '#f3ebe0';
+    var file = document.getElementById('human-bg-image').files[0];
+    var image = '';
+    if (type === 'image') {
+      if (file) image = rememberObjectUrl(URL.createObjectURL(file));
+      else if (editingHuman && editingHuman.background && editingHuman.background.image) {
+        image = adminUploadUrl(editingHuman.background.image);
+      }
+    }
+    return { type: type, color: color, image: image };
+  }
+
+  function applyHumanPreviewBackground(el, bg) {
+    if (!el) return;
+    if (bg && bg.type === 'image' && bg.image) {
+      el.style.background =
+        'url("' + bg.image + '") center / cover no-repeat, ' + (bg.color || '#f3ebe0');
+    } else {
+      el.style.background = (bg && bg.color) || '#f3ebe0';
+    }
+  }
+
+  function closeHumanPreview() {
+    humanPreviewToken += 1;
+    if (humanPreviewHandle && humanPreviewHandle.dispose) {
+      try {
+        humanPreviewHandle.dispose();
+      } catch (e) {}
+    }
+    humanPreviewHandle = null;
+    var modal = document.getElementById('human-preview-modal');
+    if (modal) modal.hidden = true;
+    var stage = document.getElementById('human-preview-stage');
+    if (stage) {
+      stage.innerHTML = '';
+      stage.style.background = '';
+    }
+  }
+
+  function openHumanPreview(opts) {
+    opts = opts || {};
+    var modal = document.getElementById('human-preview-modal');
+    var stage = document.getElementById('human-preview-stage');
+    var title = document.getElementById('human-preview-title');
+    var meta = document.getElementById('human-preview-meta');
+    if (!modal || !stage) return;
+    closeHumanPreview();
+    var token = ++humanPreviewToken;
+    if (title) title.textContent = opts.title || '数字人预览';
+    if (meta) meta.textContent = opts.meta || '';
+    applyHumanPreviewBackground(stage, opts.background);
+    stage.innerHTML = '<p class="empty-hint">预览加载中…</p>';
+    modal.hidden = false;
+    waitForModelThumbModule()
+      .then(function (mod) {
+        if (!mod || !mod.createDigitalHumanPreview) throw new Error('预览模块未就绪');
+        return mod.createDigitalHumanPreview(stage, { glbUrl: opts.glbUrl });
+      })
+      .then(function (handle) {
+        if (token !== humanPreviewToken) {
+          if (handle && handle.dispose) {
+            try {
+              handle.dispose();
+            } catch (e) {}
+          }
+          return;
+        }
+        humanPreviewHandle = handle;
+        if (handle && handle.ready && handle.ready.catch) {
+          handle.ready.catch(function (err) {
+            if (token !== humanPreviewToken) return;
+            if (meta) meta.textContent = '预览失败：' + ((err && err.message) || err);
+          });
+        }
+      })
+      .catch(function (err) {
+        stage.innerHTML =
+          '<p class="empty-hint">预览失败：' + escapeHtml((err && err.message) || '') + '</p>';
+      });
+  }
+
+  function previewHumanRecord(id) {
+    var human = findHuman(id);
+    if (!human) return;
+    var bg = human.background || {};
+    openHumanPreview({
+      title: human.name,
+      meta: (human.gender === 'male' ? '男声' : '女声') + ' · ' + (bg.type === 'image' ? '图片背景' : '纯色背景'),
+      glbUrl: adminUploadUrl(human.glbUrl),
+      background: { type: bg.type, color: bg.color, image: bg.image ? adminUploadUrl(bg.image) : '' }
+    });
+  }
+
+  function previewCurrentHuman() {
+    var file = document.getElementById('human-glb').files[0];
+    var glbUrl = '';
+    if (file) glbUrl = rememberObjectUrl(URL.createObjectURL(file));
+    else if (editingHuman && editingHuman.glbUrl) glbUrl = adminUploadUrl(editingHuman.glbUrl);
+    if (!glbUrl) {
+      alert('请先选择 GLB 模型，或先保存数字人');
+      return;
+    }
+    var name = document.getElementById('human-name').value.trim() || (editingHuman ? editingHuman.name : '数字人预览');
+    var bg = humanBackgroundForPreview();
+    openHumanPreview({
+      title: name,
+      meta: (getHumanGender() === 'male' ? '男声' : '女声') + ' · ' + (bg.type === 'image' ? '图片背景' : '纯色背景'),
+      glbUrl: glbUrl,
+      background: bg
+    });
+  }
+
+  function generateHumanThumbnail(fileOrUrl) {
+    var genId = ++humanThumbGenId;
+    humanThumbBlob = null;
+    setHumanThumbStatus('正在根据模型生成缩略图…');
+    var promise = waitForModelThumbModule()
+      .then(function (mod) {
+        if (!mod || !mod.generateDigitalHumanThumbnail) throw new Error('缩略图模块未就绪');
+        return mod.generateDigitalHumanThumbnail(fileOrUrl, { width: 360, height: 480 });
+      })
+      .then(function (blob) {
+        if (genId !== humanThumbGenId) return null;
+        if (!blob || !blob.size) throw new Error('缩略图为空');
+        humanThumbBlob = asImageFile(blob, 'digital-human-thumb.png');
+        showImagePreview(
+          document.getElementById('human-thumb-preview'),
+          rememberObjectUrl(URL.createObjectURL(humanThumbBlob))
+        );
+        setHumanThumbStatus('缩略图已自动生成');
+        return humanThumbBlob;
+      })
+      .catch(function (err) {
+        if (genId !== humanThumbGenId) return null;
+        setHumanThumbStatus('');
+        console.warn('[admin] 数字人缩略图生成失败', err);
+        alert((err && err.message) || '缩略图生成失败，仍可保存数字人');
+        return null;
+      })
+      .finally(function () {
+        if (genId === humanThumbGenId) humanThumbPending = null;
+      });
+    humanThumbPending = promise;
+    return promise;
+  }
+
+  function openHumanForm(id) {
+    closeHumanPreview();
+    revokeHumanObjectUrls();
+    var form = document.getElementById('human-form');
+    var errEl = document.getElementById('human-form-error');
+    if (!form) return;
+    form.hidden = false;
+    if (errEl) errEl.hidden = true;
+    editingHuman = id ? findHuman(id) : null;
+    humanThumbBlob = null;
+    humanThumbPending = null;
+    humanThumbGenId += 1;
+    document.getElementById('human-edit-id').value = id || '';
+    document.getElementById('human-form-title').textContent = id ? '编辑数字人' : '新增数字人';
+    document.getElementById('human-glb').value = '';
+    document.getElementById('human-bg-image').value = '';
+    document.getElementById('human-name').value = '';
+    setHumanBgColor('#f3ebe0');
+    document.getElementById('human-enabled').checked = false;
+    setHumanGender('female');
+    setHumanBgType('color');
+    setHumanGlbStatus('');
+    setHumanThumbStatus('');
+    showImagePreview(document.getElementById('human-thumb-preview'), '');
+    showImagePreview(document.getElementById('human-bg-preview'), '');
+
+    if (!editingHuman) return;
+    var h = editingHuman;
+    var bg = h.background || {};
+    document.getElementById('human-name').value = h.name || '';
+    setHumanBgColor(bg.color || '#f3ebe0');
+    document.getElementById('human-enabled').checked = !!h.enabled;
+    setHumanGender(h.gender === 'male' ? 'male' : 'female');
+    setHumanBgType(bg.type === 'image' ? 'image' : 'color');
+    setHumanGlbStatus(h.glbUrl ? '当前模型：' + h.glbUrl + '（不选新文件则保留）' : '');
+    if (bg.type === 'image' && bg.image) {
+      showImagePreview(document.getElementById('human-bg-preview'), adminUploadUrl(bg.image));
+    }
+    if (h.thumbnail) {
+      showImagePreview(document.getElementById('human-thumb-preview'), adminUploadUrl(h.thumbnail));
+      setHumanThumbStatus('当前缩略图（更换 GLB 后会重新生成）');
+    }
+  }
+
+  function closeHumanForm() {
+    closeHumanPreview();
+    var form = document.getElementById('human-form');
+    if (form) form.hidden = true;
+    revokeHumanObjectUrls();
+    editingHuman = null;
+    humanThumbBlob = null;
+    humanThumbPending = null;
+    humanThumbGenId += 1;
+  }
+
+  function saveHumanForm(e) {
+    e.preventDefault();
+    var errEl = document.getElementById('human-form-error');
+    if (errEl) errEl.hidden = true;
+    var id = document.getElementById('human-edit-id').value;
+    var name = document.getElementById('human-name').value.trim();
+    if (!name) return showFormError('human-form-error', '请填写数字人名称');
+    var glbFile = document.getElementById('human-glb').files[0];
+    if (!id && !glbFile) return showFormError('human-form-error', '请上传 GLB 模型文件');
+    var bgType = getHumanBgType();
+    var bgFile = document.getElementById('human-bg-image').files[0];
+    var existingBg = editingHuman && editingHuman.background && editingHuman.background.image;
+    if (bgType === 'image' && !bgFile && !existingBg) {
+      return showFormError('human-form-error', '图片背景请上传背景图');
+    }
+
+    var submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '保存中…';
+    }
+
+    var ready = humanThumbPending || Promise.resolve(humanThumbBlob);
+    if (glbFile && !humanThumbBlob && !humanThumbPending) {
+      ready = generateHumanThumbnail(glbFile);
+    }
+
+    Promise.resolve(ready)
+      .catch(function () {
+        return null;
+      })
+      .then(function () {
+        var fd = new FormData();
+        fd.append('name', name);
+        fd.append('gender', getHumanGender());
+        fd.append('backgroundType', bgType);
+        fd.append('backgroundColor', document.getElementById('human-bg-color').value || '#f3ebe0');
+        fd.append('enabled', document.getElementById('human-enabled').checked ? 'true' : 'false');
+        if (glbFile) fd.append('glb', glbFile);
+        if (bgType === 'image' && bgFile) fd.append('backgroundImage', bgFile);
+        if (bgType === 'color') fd.append('removeBackgroundImage', 'true');
+        if (humanThumbBlob) {
+          fd.append('thumbnail', asImageFile(humanThumbBlob, 'digital-human-thumb.png'), 'digital-human-thumb.png');
+        }
+        return api('/api/admin/digital-humans' + (id ? '/' + id : ''), {
+          method: id ? 'PUT' : 'POST',
+          body: fd,
+          timeout: 120000
+        });
+      })
+      .then(function () {
+        closeHumanForm();
+        return loadDigitalHumans();
+      })
+      .catch(function (err) {
+        showFormError('human-form-error', (err && err.message) || '保存失败');
+      })
+      .finally(function () {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = '保存';
+        }
+      });
+  }
+
   function loadPrints() {
     return api('/api/admin/print-orders').then(function (res) {
       var wrap = document.getElementById('prints-list');
@@ -2144,6 +2648,7 @@
     artisans: loadArtisans,
     about: loadAbout,
     models: loadStudioLibraryAdmin,
+    humans: loadDigitalHumans,
     comments: loadComments,
     prints: loadPrints
   };
@@ -2155,6 +2660,7 @@
     artisans: '合作艺人',
     about: '关于我们',
     models: '模型管理',
+    humans: '数字人管理',
     comments: '作品留言',
     prints: '打印申请'
   };
@@ -2321,6 +2827,47 @@
     if (!file) return;
     generateAutoThumbnailFromGlbFile(file);
   });
+
+  onEl('btn-human-new', 'click', function () {
+    openHumanForm('');
+  });
+  onEl('human-cancel', 'click', closeHumanForm);
+  onEl('human-preview-btn', 'click', previewCurrentHuman);
+  onEl('human-preview-close', 'click', closeHumanPreview);
+  var humanFormEl = document.getElementById('human-form');
+  if (humanFormEl) humanFormEl.addEventListener('submit', saveHumanForm);
+  onEl('human-glb', 'change', function () {
+    var file = this.files && this.files[0];
+    if (!file) return;
+    setHumanGlbStatus(
+      '已选择：' + file.name + '（' + Math.round((file.size / 1024 / 1024) * 10) / 10 + ' MB）'
+    );
+    generateHumanThumbnail(file);
+  });
+  onEl('human-bg-image', 'change', function () {
+    var file = this.files && this.files[0];
+    if (!file) return;
+    showImagePreview(
+      document.getElementById('human-bg-preview'),
+      rememberObjectUrl(URL.createObjectURL(file))
+    );
+    setHumanBgType('image');
+  });
+  onEl('human-bg-color', 'input', function () {
+    var label = document.getElementById('human-bg-color-value');
+    if (label) label.textContent = this.value || '#f3ebe0';
+  });
+  document.querySelectorAll('input[name="human-bg-type"]').forEach(function (el) {
+    el.addEventListener('change', function () {
+      setHumanBgType(this.value);
+    });
+  });
+  var humanPreviewModal = document.getElementById('human-preview-modal');
+  if (humanPreviewModal) {
+    humanPreviewModal.addEventListener('click', function (e) {
+      if (e.target === humanPreviewModal) closeHumanPreview();
+    });
+  }
   onEl('btn-prints-refresh', 'click', function () {
     loadPrints();
   });

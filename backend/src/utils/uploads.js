@@ -12,7 +12,10 @@ const UPLOAD_SUBDIRS = [
   'about',
   'about/works',
   'models',
-  'models/thumbs'
+  'models/thumbs',
+  'digital-humans',
+  'digital-humans/backgrounds',
+  'digital-humans/thumbs'
 ];
 
 function ensureUploadDirs(uploadDir) {

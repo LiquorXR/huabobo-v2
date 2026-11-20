@@ -2,7 +2,9 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { eq, desc } = require('drizzle-orm');
 const config = require('../config');
+const dbm = require('../db/client');
 const asyncHandler = require('../utils/asyncHandler');
 
 /**
@@ -257,6 +259,56 @@ function ttsConfig() {
   };
 }
 
+/**
+ * 当前启用数字人的性别 -> 音色。
+ * 管理员切换数字人后最多 10 秒生效；DB 不可用时静默回退默认音色。
+ */
+let activeVoiceCache = { at: 0, gender: '' };
+
+async function activeGenderCached() {
+  const now = Date.now();
+  if (now - activeVoiceCache.at < 10 * 1000) return activeVoiceCache.gender;
+  try {
+    if (!dbm.isDbReady()) {
+      activeVoiceCache = { at: now, gender: '' };
+      return '';
+    }
+    const { digitalHumans } = dbm.schema;
+    const rows = await dbm.db
+      .select({ gender: digitalHumans.gender })
+      .from(digitalHumans)
+      .where(eq(digitalHumans.enabled, true))
+      .orderBy(desc(digitalHumans.updatedAt))
+      .limit(1);
+    activeVoiceCache = { at: now, gender: rows[0] ? rows[0].gender : '' };
+    return activeVoiceCache.gender;
+  } catch (e) {
+    activeVoiceCache = { at: now, gender: '' };
+    return '';
+  }
+}
+
+async function ttsConfigForRequest() {
+  const cfg = ttsConfig();
+  try {
+    const gender = await activeGenderCached();
+    if (gender === 'male') {
+      cfg.voice =
+        process.env.OPENAI_TTS_VOICE_MALE ||
+        process.env.ZHIPU_TTS_VOICE_MALE ||
+        cfg.voice;
+    } else if (gender === 'female') {
+      cfg.voice =
+        process.env.OPENAI_TTS_VOICE_FEMALE ||
+        process.env.ZHIPU_TTS_VOICE_FEMALE ||
+        cfg.voice;
+    }
+  } catch (e) {
+    /* 数字人配置不应影响语音主链路 */
+  }
+  return cfg;
+}
+
 async function sleepMs(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
@@ -340,7 +392,7 @@ router.post(
       return res.status(400).json({ ok: false, message: '文本过长，请分段朗读' });
     }
 
-    const cfg = ttsConfig();
+    const cfg = await ttsConfigForRequest();
     if (!cfg.apiKey) {
       return res.status(503).json({ ok: false, message: '语音服务未配置' });
     }
@@ -353,6 +405,7 @@ router.post(
       res.set('Content-Length', String(hit.length));
       res.set('Cache-Control', 'public, max-age=86400');
       res.set('X-TTS-Provider', cfg.provider);
+      res.set('X-TTS-Voice', cfg.voice);
       res.set('X-TTS-Cache', 'hit');
       return res.send(hit);
     }
@@ -410,6 +463,7 @@ router.post(
       res.set('Content-Length', String(clean.length));
       res.set('Cache-Control', 'public, max-age=86400');
       res.set('X-TTS-Provider', cfg.provider);
+      res.set('X-TTS-Voice', cfg.voice);
       res.set('X-TTS-Cache', 'miss');
       return res.send(clean);
     } catch (e) {

@@ -124,6 +124,50 @@ const uploadStudioModelFiles = multer({
   { name: 'thumbnail', maxCount: 1 }
 ]);
 
+function digitalHumanUploadDest(_req, file, cb) {
+  var sub = 'digital-humans';
+  if (file.fieldname === 'backgroundImage') sub = 'digital-humans/backgrounds';
+  else if (file.fieldname === 'thumbnail') sub = 'digital-humans/thumbs';
+  var dest = path.join(config.uploadDir, sub);
+  ensureDir(dest);
+  cb(null, dest);
+}
+
+const uploadDigitalHumanStorage = multer.diskStorage({
+  destination: digitalHumanUploadDest,
+  filename: function (_req, file, cb) {
+    const ext = path.extname(file.originalname) || (file.fieldname === 'glb' ? '.glb' : '.jpg');
+    const safe = Date.now() + '-' + Math.round(Math.random() * 1e9) + ext.toLowerCase();
+    cb(null, safe);
+  }
+});
+
+function digitalHumanFileFilter(_req, file, cb) {
+  if (file.fieldname === 'glb') {
+    const ok =
+      /\.glb$/i.test(file.originalname) ||
+      file.mimetype === 'model/gltf-binary' ||
+      file.mimetype === 'application/octet-stream';
+    if (!ok) return cb(new Error('数字人模型须为 .glb 格式'));
+    return cb(null, true);
+  }
+  if (file.fieldname === 'backgroundImage' || file.fieldname === 'thumbnail') {
+    if (!isImageUpload(file)) return cb(new Error('背景图/缩略图须为图片'));
+    return cb(null, true);
+  }
+  cb(new Error('不支持的文件字段'));
+}
+
+const uploadDigitalHumanFiles = multer({
+  storage: uploadDigitalHumanStorage,
+  fileFilter: digitalHumanFileFilter,
+  limits: { fileSize: 50 * 1024 * 1024 }
+}).fields([
+  { name: 'glb', maxCount: 1 },
+  { name: 'backgroundImage', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 }
+]);
+
 function artisanUploadDest(_req, file, cb) {
   var sub = 'artisans';
   if (file.fieldname === 'wechatQr') sub = 'artisans/wechat';
@@ -159,5 +203,6 @@ module.exports = {
   uploadUserAvatar,
   uploadAboutFiles,
   uploadStudioModelFiles,
+  uploadDigitalHumanFiles,
   uploadWorkCover
 };

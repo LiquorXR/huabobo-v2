@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>指间塑 · 管理后台</title>
-  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="admin.css?v=20261120b">
   <link rel="stylesheet" href="./vendor/toastui-editor.min.css">
   <script>
     /* 走当前页面同源（域名须 Nginx 反代 /api；IP:3000 则直连 Node） */
@@ -51,6 +51,7 @@
         <button type="button" class="nav-item" data-panel="artisans">合作艺人</button>
         <button type="button" class="nav-item" data-panel="about">关于我们</button>
         <button type="button" class="nav-item" data-panel="models">模型管理</button>
+        <button type="button" class="nav-item" data-panel="humans">数字人管理</button>
         <button type="button" class="nav-item" data-panel="prints">打印申请</button>
       </nav>
       <button type="button" id="btn-logout" class="btn-logout">退出登录</button>
@@ -298,6 +299,53 @@
         </div>
       </section>
 
+      <section id="panel-humans" class="panel">
+        <div class="panel-toolbar">
+          <h3 class="models-admin-heading">数字人列表</h3>
+          <button type="button" id="btn-human-new" class="btn btn-primary">新增数字人</button>
+        </div>
+        <p class="editor-section-hint">同一时间仅可启用 1 个；前端只加载已启用的数字人。未启用时前端继续使用默认形象。</p>
+        <div id="humans-list" class="data-table-wrap"></div>
+
+        <form id="human-form" class="editor-card editor-card-wide" hidden>
+          <h3 id="human-form-title">新增数字人</h3>
+          <input type="hidden" id="human-edit-id">
+          <label><span>数字人名称</span><input type="text" id="human-name" required maxlength="40" placeholder="例如：饽饽小匠"></label>
+          <label><span>性别（绑定音色）</span>
+            <span class="radio-row">
+              <label class="check-option"><input type="radio" name="human-gender" value="female" checked><span>女声（tongtong）</span></label>
+              <label class="check-option"><input type="radio" name="human-gender" value="male"><span>男声（xiaochen）</span></label>
+            </span>
+          </label>
+          <label><span>背景（二选一）</span>
+            <span class="radio-row">
+              <label class="check-option"><input type="radio" name="human-bg-type" value="color" checked><span>纯色</span></label>
+              <label class="check-option"><input type="radio" name="human-bg-type" value="image"><span>图片</span></label>
+            </span>
+          </label>
+          <label><span>背景颜色</span>
+            <span class="color-picker-row">
+              <input type="color" id="human-bg-color" value="#f3ebe0">
+              <span id="human-bg-color-value" class="color-picker-value">#f3ebe0</span>
+            </span>
+            <p class="editor-section-hint">图片背景时作为加载兜底色</p>
+          </label>
+          <label id="human-bg-image-row" hidden><span>背景图片</span><input type="file" id="human-bg-image" accept="image/png,image/jpeg,image/webp,image/gif"><p class="editor-section-hint">建议竖版，≤8MB</p></label>
+          <div id="human-bg-preview" class="image-preview human-bg-preview" hidden></div>
+          <label><span>GLB 模型（需 Mixamo 骨骼）</span><input type="file" id="human-glb" accept=".glb,model/gltf-binary"><p class="editor-section-hint">必须含骨骼，允许 mixamorig: 前缀；≤50MB</p></label>
+          <p id="human-glb-status" class="editor-section-hint"></p>
+          <div id="human-thumb-preview" class="image-preview human-thumb-preview" hidden></div>
+          <p id="human-thumb-status" class="editor-section-hint"></p>
+          <label class="check-option"><input type="checkbox" id="human-enabled"><span>在前端展示使用（启用后自动停用其他数字人）</span></label>
+          <div class="form-actions">
+            <button type="button" id="human-cancel" class="btn btn-ghost">取消</button>
+            <button type="button" id="human-preview-btn" class="btn btn-ghost">预览</button>
+            <button type="submit" class="btn btn-primary">保存</button>
+          </div>
+          <p id="human-form-error" class="form-error" hidden></p>
+        </form>
+      </section>
+
       <section id="panel-comments" class="panel" hidden aria-hidden="true">
         <div id="comments-list" class="data-table-wrap"></div>
       </section>
@@ -312,8 +360,19 @@
     </main>
   </div>
 
-  <script src="./vendor/admin-thumb.bundle.js" data-admin-thumb-bundle="1"></script>
+  <div id="human-preview-modal" class="human-preview-modal" hidden>
+    <div class="human-preview-card">
+      <div class="human-preview-head">
+        <h3 id="human-preview-title">数字人预览</h3>
+        <button type="button" id="human-preview-close" class="btn btn-ghost">关闭</button>
+      </div>
+      <div id="human-preview-stage" class="human-preview-stage"></div>
+      <p id="human-preview-meta" class="editor-section-hint"></p>
+    </div>
+  </div>
+
+  <script src="./vendor/admin-thumb.bundle.js?v=20261120b" data-admin-thumb-bundle="1"></script>
   <script src="./vendor/toastui-editor-all.min.js"></script>
-  <script src="admin.js"></script>
+  <script src="admin.js?v=20261120b"></script>
 </body>
 </html>

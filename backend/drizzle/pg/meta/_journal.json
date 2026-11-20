@@ -15,6 +15,13 @@
       "when": 1794572327691,
       "tag": "0001_rare_the_liberteens",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795149959939,
+      "tag": "0002_safe_steve_rogers",
+      "breakpoints": true
     }
   ]
 }

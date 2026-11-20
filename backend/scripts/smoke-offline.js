@@ -56,6 +56,10 @@ async function req(method, path, body) {
     check(m + ' ' + p + ' => 503', r.status === 503, r);
   }
 
+  // 数字人配置是可选增强：断库时公开 active 必须优雅回退 null，不能让前端报错
+  r = await req('GET', '/api/digital-humans/active');
+  check('digital human active offline 200 null', r.status === 200 && r.data && r.data.data === null, r);
+
   console.log(failures === 0 ? 'OFFLINE PASS' : 'OFFLINE FAIL: ' + failures);
   process.exit(failures === 0 ? 0 : 1);
 })().catch(function (e) {
