@@ -32,7 +32,7 @@ if [ "${SKIP_SEED_OVERWRITE:-}" != "1" ]; then
 fi
 
 PREV_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-echo "== deploy ${PREV_SHA} -> ${TARGET_SHA} (BUILD=${BUILD}) =="
+echo "== deploy ${PREV_SHA} -> ${TARGET_SHA} =="
 
 rollback() {
   echo "!! 发布失败，回滚到 ${PREV_SHA}" >&2
@@ -60,6 +60,7 @@ git reset --hard "$TARGET_SHA"
 if [ -z "$BUILD" ]; then
   BUILD="$(date +%Y%m%d-%H%M)-$(git rev-parse --short HEAD)"
 fi
+echo "BUILD=${BUILD}"
 
 # 刷新前端缓存键（只改已有 ?v，保证用户拿到新前端）
 node frontend/scripts/bump-cache.js "$BUILD"
