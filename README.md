@@ -56,6 +56,31 @@ docker compose logs -f backend      # 看后端日志，出问题先看这个
 docker compose ps                   # 三个容器都 Up 才算正常
 ```
 
+**全自动发布（push main 直发生产，无 staging）**
+
+`CI` 全绿后 `Deploy` 自动 `SSH` 上服务器执行 `scripts/deploy-server.sh`：
+拉取 `main` → 备份数据库到 `backups/` → 刷新前端 `?v` 缓存键 → `compose up -d --build` →
+轮询 `https://你的域名/api/health`（`db:"connected"` 才算成），失败自动回滚到上一个提交。
+
+```bash
+# 服务器一次性准备（已有仓库 + .env 的机器）
+git clone <本仓库> /opt/huabobo-v2 && cd /opt/huabobo-v2
+cp .env.example .env   # 填 DOMAIN/POSTGRES_PASSWORD/JWT_SECRET，再加 SKIP_SEED_OVERWRITE=1
+bash scripts/deploy-server.sh   # 手动跑一次验证通过，以后全自动
+```
+
+GitHub 仓库 `Settings → Secrets → Environments → production` 配 5 个：
+
+| Secret | 内容 |
+|--------|------|
+| `SSH_HOST` | 服务器 IP/域名 |
+| `SSH_USER` | 如 `root` 或专用 `deploy` 用户 |
+| `SSH_KEY` | `ssh-keygen -t ed25519` 的私钥（公钥写入服务器 `~/.ssh/authorized_keys`） |
+| `SSH_PORT` | 可选，默认 `22` |
+| `DEPLOY_DIR` | 如 `/opt/huabobo-v2` |
+
+生产 `.env` 建议再加 `SKIP_SEED_OVERWRITE=1`（只补缺失示例数据，不覆盖管理员改过的新闻/艺人）。本地/CI 不设，保持原行为。
+
 **可选功能：数字人语音 / 识图点评**
 
 不填也能用（会自动降级为浏览器发音 + 本地规则）。需要时在 `.env` 里追加后重启即可：

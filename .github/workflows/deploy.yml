@@ -1,0 +1,66 @@
+name: Deploy
+
+# CI 全绿后直发生产（SSH 现场构建，无 staging）。
+# 触发：CI workflow 在 main 上成功后。 secrets 需求见下方 env 注释。
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      # 服务器存放仓库的绝对路径，如 /opt/huabobo-v2
+      DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+    steps:
+      - name: checkout deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: validate deploy files
+        run: |
+          bash -n scripts/deploy-server.sh
+          node --check frontend/scripts/bump-cache.js
+          node --check backend/src/seedContent.js
+          printf 'DOMAIN=ci.local\nPOSTGRES_USER=mydb\nPOSTGRES_DB=mydb\nPOSTGRES_PASSWORD=ci_pass\nJWT_SECRET=ci_secret\n' > .env
+          docker compose config -q && echo "compose ok"
+          rm -f .env
+
+      - name: dry-run frontend cache bump (then restore)
+        run: |
+          node frontend/scripts/bump-cache.js "ci-${GITHUB_SHA:-local}"
+          node frontend/scripts/check-assets.js
+          git checkout -- frontend
+          echo "bump dry-run ok"
+
+      - name: check deploy secrets
+        run: |
+          for v in DEPLOY_DIR SSH_HOST SSH_USER; do
+            if [ -z "${!v}" ]; then echo "缺少 secret: $v" >&2; exit 1; fi
+          done
+          echo "secrets ok (SSH_KEY 在下一步由 ssh-agent 读取)"
+
+      - name: start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: run deploy script on server
+        run: |
+          PORT="${SSH_PORT:-22}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" \
+            "cd '$DEPLOY_DIR' && bash scripts/deploy-server.sh '$SHA'"

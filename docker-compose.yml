@@ -32,6 +32,7 @@ services:
       UPLOAD_DIR: /data/uploads
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SKIP_SEED_OVERWRITE: ${SKIP_SEED_OVERWRITE:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
       OPENAI_VISION_MODEL: ${OPENAI_VISION_MODEL:-}

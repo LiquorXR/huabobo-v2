@@ -124,11 +124,16 @@ function toMs(d) {
 
 async function ensureSeedContent() {
   const { news, artisans, aboutPages } = dbm.schema;
+  // 生产自动发布时建议 SKIP_SEED_OVERWRITE=1：只补缺失、不覆盖管理员已改的内容。
+  // 默认（本地/CI）保持原有“标题命中即同步”行为，保证示例数据一致。
+  const insertOnly = process.env.SKIP_SEED_OVERWRITE === '1';
+  if (insertOnly) console.log('[seed] SKIP_SEED_OVERWRITE=1：已存在的内容不再覆盖，只补缺失');
 
   for (const item of INITIAL_NEWS) {
     const rows = await dbm.db.select().from(news).where(eq(news.title, item.title)).limit(1);
     const now = nowMs();
     if (rows[0]) {
+      if (insertOnly) continue;
       await dbm.db
         .update(news)
         .set({
@@ -163,6 +168,7 @@ async function ensureSeedContent() {
     const contact = item.contact || {};
     const wechat = item.wechat || {};
     if (rows[0]) {
+      if (insertOnly) continue;
       const existing = rows[0];
       await dbm.db
         .update(artisans)
