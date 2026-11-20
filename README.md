@@ -51,10 +51,12 @@ curl https://你的域名/api/health
 **日常维护（记住 3 条就够）**
 
 ```bash
-docker compose up -d --build        # 更新代码后重新部署
-docker compose logs -f backend      # 看后端日志，出问题先看这个
-docker compose ps                   # 三个容器都 Up 才算正常
+bash scripts/deploy-server.sh   # 更新代码后重新部署（推荐：备份+刷缓存+健康检查+失败回滚）
+docker compose logs -f backend  # 看后端日志，出问题先看这个
+docker compose ps               # 三个容器都 Up 才算正常
 ```
+
+> 不要裸 `git pull + docker compose up`：发布脚本会自动刷新前端 `?v`（工作区会变脏），下次裸 `pull` 可能冲突。统一走脚本，它内部会 `reset` 处理。
 
 **全自动发布（push main 直发生产，无 staging）**
 
@@ -69,7 +71,7 @@ cp .env.example .env   # 填 DOMAIN/POSTGRES_PASSWORD/JWT_SECRET，再加 SKIP_S
 bash scripts/deploy-server.sh   # 手动跑一次验证通过，以后全自动
 ```
 
-GitHub 仓库 `Settings → Secrets → Environments → production` 配 5 个：
+GitHub 仓库 `Settings → Environments → production → Environment secrets` 配 4 个必填 + 1 个可选：
 
 | Secret | 内容 |
 |--------|------|
@@ -161,4 +163,4 @@ npm start
 | `https://你的域名/api/health` 打不开 | `docker compose logs backend` 看报错，多半是 `.env` 里 DOMAIN / 密码写错 |
 | 管理后台图片不显示 | `.env` 里 `DOMAIN` 必须和当前访问的域名一致，改完 `docker compose up -d --build` |
 | 摄像头打不开 | 浏览器只允许 HTTPS 或 `http://127.0.0.1` 用摄像头，换对应地址重进 |
-| 更新代码后图片没了 | 属正常：上传文件存在数据卷里，`git pull` 后只跑 `docker compose up -d --build`，不要删卷 |
+| 更新代码后图片没了 | 属正常：上传文件存在数据卷里，更新只跑 `bash scripts/deploy-server.sh`，不要删卷、不要 `down -v` |
