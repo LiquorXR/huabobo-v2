@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
-import { createHumanAvatar } from './avatar-human.js?v=20261120a';
+import { createHumanAvatar } from './avatar-human.js?v=20261120e';
 
 function canRunStudio() {
   if (typeof Api !== 'undefined' && !Api.isLoggedIn()) {
@@ -120,6 +120,7 @@ const humanSpeechEl = document.getElementById('studio-human-speech');
 const humanFigureEl = document.getElementById('studio-human') || document.querySelector('.studio-human');
 const humanCanvasEl = document.getElementById('studio-human-canvas');
 const humanPosterEl = document.querySelector('.studio-human__poster');
+const humanEmptyEl = document.getElementById('studio-human-empty');
 const humanActionsIdle = document.getElementById('human-actions-idle');
 const humanActionsChoose = document.getElementById('human-actions-choose');
 const humanActionsWrapup = document.getElementById('human-actions-wrapup');
@@ -137,6 +138,7 @@ let humanSpeakToken = 0;
 let humanVoice = null;
 let humanGender = 'female';
 let activeHumanConfig = null;
+let humanAvailable = false;
 let humanAvatar = null;
 let realReviewStream = null;
 let lastRealRecognition = null;
@@ -1933,10 +1935,12 @@ function setHumanActions(phase) {
   humanPhase = phase;
   // 点评 / 拍摄开始时，收掉还在进行的打招呼手势，避免和思考动作叠在一起
   if (humanAvatar && (phase === 'reviewing' || phase === 'camera')) humanAvatar.clearGestures();
-  if (humanActionsIdle) humanActionsIdle.hidden = phase !== 'idle';
-  if (humanActionsChoose) humanActionsChoose.hidden = phase !== 'choose';
-  if (humanActionsWrapup) humanActionsWrapup.hidden = phase !== 'wrapup';
-  if (humanActionsRealFollowup) humanActionsRealFollowup.hidden = phase !== 'realFollowup';
+  if (humanActionsIdle) humanActionsIdle.hidden = !humanAvailable || phase !== 'idle';
+  if (humanActionsChoose) humanActionsChoose.hidden = !humanAvailable || phase !== 'choose';
+  if (humanActionsWrapup) humanActionsWrapup.hidden = !humanAvailable || phase !== 'wrapup';
+  if (humanActionsRealFollowup) {
+    humanActionsRealFollowup.hidden = !humanAvailable || phase !== 'realFollowup';
+  }
 }
 
 function setHumanThinking(on) {
@@ -1951,7 +1955,7 @@ function setHumanThinking(on) {
   avatarSetState(on ? 'thinking' : 'idle');
 }
 
-/* —— 3D 数字人：默认不显示静态图，只有 3D 失败才回退 —— */
+/* —— 3D 数字人：默认不显示静态图；加载失败由调用方显示缩略图或空状态 —— */
 function avatarSetState(name) {
   if (humanAvatar) humanAvatar.setState(name);
   // 状态回写到 DOM，便于排查与按状态写样式
@@ -1962,10 +1966,71 @@ function avatarGesture(name) {
   if (humanAvatar) humanAvatar.gesture(name);
 }
 
-function showHumanPoster() {
+function setHumanEmptyText(title, desc) {
+  const titleEl = document.getElementById('studio-human-empty-title');
+  const descEl = document.getElementById('studio-human-empty-desc');
+  if (titleEl) titleEl.textContent = title;
+  if (descEl) descEl.textContent = desc;
+}
+
+/** 没有任何启用数字人时：不加载默认模型/海报，显示空状态并禁用交互 */
+function showHumanEmptyState(title, desc) {
+  humanAvailable = false;
+  if (humanAvatar && humanAvatar.dispose) {
+    try {
+      humanAvatar.dispose();
+    } catch (e) {}
+  }
+  humanAvatar = null;
   if (humanCanvasEl) humanCanvasEl.hidden = true;
-  if (humanPosterEl) humanPosterEl.hidden = false;
-  if (humanFigureEl) humanFigureEl.classList.remove('is-3d', 'is-loading');
+  if (humanPosterEl) {
+    humanPosterEl.hidden = true;
+    humanPosterEl.removeAttribute('src');
+    humanPosterEl.alt = '';
+  }
+  if (humanFigureEl) {
+    humanFigureEl.classList.remove('is-3d', 'is-loading', 'is-speaking', 'is-thinking', 'is-fallback');
+    humanFigureEl.classList.add('is-empty');
+    humanFigureEl.style.background = '';
+  }
+  if (humanEmptyEl) humanEmptyEl.hidden = false;
+  setHumanEmptyText(
+    title || '数字人暂未配置',
+    desc || '请联系管理员在后台启用数字人'
+  );
+  if (humanSpeechEl) humanSpeechEl.hidden = true;
+  setHumanActions('idle');
+  if (hintStatusEl) hintStatusEl.textContent = '数字人暂未配置';
+  refreshLucide();
+}
+
+/** 已启用数字人但 3D 加载失败：只回退该数字人自己的缩略图，不加载默认形象 */
+function showHumanFallback(active) {
+  humanAvailable = false;
+  if (humanAvatar && humanAvatar.dispose) {
+    try {
+      humanAvatar.dispose();
+    } catch (e) {}
+  }
+  humanAvatar = null;
+  if (humanCanvasEl) humanCanvasEl.hidden = true;
+  if (humanFigureEl) {
+    humanFigureEl.classList.remove('is-3d', 'is-loading', 'is-speaking', 'is-thinking', 'is-empty');
+    humanFigureEl.classList.add('is-fallback');
+  }
+  if (active && active.thumbnail && humanPosterEl) {
+    humanPosterEl.src = resolveMediaUrl(active.thumbnail);
+    humanPosterEl.alt = active.name + ' AI 数字人';
+    humanPosterEl.hidden = false;
+    if (humanEmptyEl) humanEmptyEl.hidden = true;
+  } else {
+    showHumanEmptyState('数字人加载失败', '请联系管理员检查数字人配置');
+    return;
+  }
+  if (humanSpeechEl) humanSpeechEl.hidden = true;
+  setHumanActions('idle');
+  if (hintStatusEl) hintStatusEl.textContent = '数字人加载失败，请联系管理员';
+  refreshLucide();
 }
 
 function resolveMediaUrl(url) {
@@ -2002,7 +2067,7 @@ async function loadActiveDigitalHuman() {
     if (!json || !json.ok) return null;
     return normalizeActiveHuman(json.data);
   } catch (e) {
-    console.warn('[studio] 数字人配置加载失败，使用默认形象', e);
+    console.warn('[studio] 数字人配置加载失败，显示未配置状态', e);
     return null;
   }
 }
@@ -2026,15 +2091,32 @@ function applyHumanBackground(active) {
 function initHumanAvatar(active) {
   if (!humanCanvasEl) return;
   activeHumanConfig = active || null;
-  humanGender = active && active.gender === 'male' ? 'male' : 'female';
+
+  if (!active || !active.glbUrl) {
+    humanGender = 'female';
+    showHumanEmptyState();
+    return;
+  }
+
+  humanGender = active.gender === 'male' ? 'male' : 'female';
+  humanAvailable = false;
+  applyHumanBackground(active);
+  if (hintStatusEl) hintStatusEl.textContent = '数字人加载中…';
+
+  if (humanFigureEl) {
+    humanFigureEl.classList.remove('is-empty', 'is-fallback');
+  }
+  if (humanEmptyEl) humanEmptyEl.hidden = true;
 
   if (humanPosterEl) {
-    humanPosterEl.src = active && active.thumbnail
-      ? resolveMediaUrl(active.thumbnail)
-      : 'images/studio-digital-human.jpg';
-    humanPosterEl.alt = active
-      ? active.name + ' AI 数字人'
-      : 'AI非遗数字传承人饽饽小匠';
+    if (active.thumbnail) {
+      humanPosterEl.src = resolveMediaUrl(active.thumbnail);
+      humanPosterEl.alt = active.name + ' AI 数字人';
+    } else {
+      humanPosterEl.removeAttribute('src');
+      humanPosterEl.alt = '';
+    }
+    humanPosterEl.hidden = true;
   }
 
   // 只有慢加载（>350ms）才显示占位；本地秒开时不会闪一下
@@ -2047,13 +2129,13 @@ function initHumanAvatar(active) {
   try {
     humanAvatar = createHumanAvatar({
       canvas: humanCanvasEl,
-      modelUrl: active && active.glbUrl ? resolveMediaUrl(active.glbUrl) : undefined
+      modelUrl: resolveMediaUrl(active.glbUrl)
     });
   } catch (e) {
     window.clearTimeout(hintTimer);
-    console.warn('[studio] 数字人 3D 初始化失败，回退静态图', e);
+    console.warn('[studio] 数字人 3D 初始化失败', e);
     humanAvatar = null;
-    showHumanPoster();
+    showHumanFallback(active);
     return;
   }
 
@@ -2061,25 +2143,32 @@ function initHumanAvatar(active) {
     .then(function (ok) {
       window.clearTimeout(hintTimer);
       if (!ok) {
-        console.warn('[studio] 数字人 3D 未就绪，回退静态图');
-        showHumanPoster();
+        console.warn('[studio] 数字人 3D 未就绪，显示加载失败状态');
+        showHumanFallback(active);
         return;
       }
+      humanAvailable = true;
       humanCanvasEl.hidden = false;
       // 先按面板真实尺寸重建帧缓冲，再淡入，避免露出空画布
       void humanCanvasEl.offsetWidth;
       humanAvatar.resize();
-      if (humanFigureEl) humanFigureEl.classList.remove('is-loading');
+      if (humanFigureEl) {
+        humanFigureEl.classList.remove('is-loading', 'is-empty', 'is-fallback');
+      }
+      if (humanEmptyEl) humanEmptyEl.hidden = true;
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () {
           if (humanFigureEl) humanFigureEl.classList.add('is-3d');
+          if (humanPhase === 'idle') setHumanActions('idle');
+          if (hintStatusEl) hintStatusEl.textContent = '可开始数字人交互';
+          refreshLucide();
         });
       });
     })
     .catch(function (e) {
       window.clearTimeout(hintTimer);
-      console.warn('[studio] 数字人 3D 加载失败，回退静态图', e);
-      showHumanPoster();
+      console.warn('[studio] 数字人 3D 加载失败', e);
+      showHumanFallback(active);
     });
 }
 
@@ -3221,11 +3310,16 @@ function resetHumanIdle() {
   setHumanActions('idle');
   if (humanFigureEl) humanFigureEl.classList.remove('is-speaking');
   avatarSetState('idle');
+  if (!humanAvailable) return;
   setStatus('数字人已待机');
   if (hintStatusEl) hintStatusEl.textContent = '可再次开始数字人交互';
 }
 
 function startHumanSession() {
+  if (!humanAvailable || !humanAvatar || !humanAvatar.isReady) {
+    setStatus('数字人暂时不可用，请联系管理员启用');
+    return;
+  }
   stopRealReviewCamera();
   clearRealFreeze();
   setHumanActions('greeting');

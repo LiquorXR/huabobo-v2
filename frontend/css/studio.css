@@ -478,6 +478,60 @@
   display: none !important;
 }
 
+/* 没有启用数字人：中性空状态，不展示任何默认形象 */
+.studio-human.is-empty {
+  background: #f4f1ec;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.studio-human.is-empty .studio-human__img,
+.studio-human.is-empty .studio-human__canvas,
+.studio-human.is-empty .studio-human__loading,
+.studio-human.is-empty .studio-human__badge {
+  display: none !important;
+}
+
+.studio-human.is-fallback .studio-human__canvas {
+  display: none !important;
+}
+
+.studio-human__empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  text-align: center;
+  color: var(--ink-soft, #5c6378);
+}
+
+.studio-human__empty[hidden] {
+  display: none !important;
+}
+
+.studio-human__empty svg {
+  width: 30px;
+  height: 30px;
+  opacity: 0.45;
+}
+
+.studio-human__empty p {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink, #141824);
+}
+
+.studio-human__empty small {
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
 /* 加载占位：只在慢加载（>350ms）时淡入，快加载不会闪一下 */
 .studio-human__loading {
   position: absolute;

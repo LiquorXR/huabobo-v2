@@ -304,7 +304,7 @@
           <h3 class="models-admin-heading">数字人列表</h3>
           <button type="button" id="btn-human-new" class="btn btn-primary">新增数字人</button>
         </div>
-        <p class="editor-section-hint">同一时间仅可启用 1 个；前端只加载已启用的数字人。未启用时前端继续使用默认形象。</p>
+        <p class="editor-section-hint">同一时间仅可启用 1 个；前端只加载已启用的数字人。未启用时前端显示“数字人暂未配置”，不会加载默认形象。</p>
         <div id="humans-list" class="data-table-wrap"></div>
 
         <form id="human-form" class="editor-card editor-card-wide" hidden>
@@ -373,6 +373,6 @@
 
   <script src="./vendor/admin-thumb.bundle.js?v=20261120b" data-admin-thumb-bundle="1"></script>
   <script src="./vendor/toastui-editor-all.min.js"></script>
-  <script src="admin.js?v=20261120b"></script>
+  <script src="admin.js?v=20261120c"></script>
 </body>
 </html>

@@ -1,8 +1,9 @@
 /**
- * 指间塑 — 数字人「饽饽小匠」实时姿态引擎
+ * 指间塑 — 数字人实时姿态引擎
  *
- * 背景：models/avatar/shaded.glb（= base_basic_shaded.glb）只有 52 根骨骼，
- * 没有动画轨道、也没有口型 morph，所以动作只能过程化生成。
+ * 模型来自后台「数字人管理」当前启用项，前端不内置默认模型。
+ * 模型需 Mixamo 兼容骨骼（允许 mixamorig: 前缀），且没有动画轨道/口型 morph，
+ * 因此动作全部由本模块过程化生成。
  *
  * 方案：
  *   1. 手臂用「世界方向瞄准」——直接指定上臂 / 前臂要指向哪里，
@@ -12,7 +13,7 @@
  *   4. 挥手 / 点头做成带包络的一次性手势，可叠在任意状态之上。
  *
  * 用法：
- *   const avatar = createHumanAvatar({ canvas });
+ *   const avatar = createHumanAvatar({ canvas, modelUrl });
  *   await avatar.ready;
  *   avatar.setState('thinking' | 'speaking' | 'idle');
  *   avatar.gesture('wave' | 'nod');
@@ -23,7 +24,6 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const DEG = Math.PI / 180;
 const UP = new THREE.Vector3(0, 1, 0);
-const DEFAULT_MODEL_URL = 'models/avatar/shaded.glb';
 
 /** 取景：胯部到头顶上方留白，挥手时指尖（最高 1.68m）也不会被裁掉 */
 const FRAME_TOP = 1.90;
@@ -368,7 +368,7 @@ const GESTURES = {
 export function createHumanAvatar(options) {
   const opts = options || {};
   const canvas = opts.canvas;
-  const modelUrl = opts.modelUrl || DEFAULT_MODEL_URL;
+  const modelUrl = opts.modelUrl || '';
 
   const api = {
     ready: null,
@@ -382,7 +382,13 @@ export function createHumanAvatar(options) {
     resize: resize
   };
 
-  if (!canvas) {
+  if (!canvas || !modelUrl) {
+    api.setState = function () {};
+    api.gesture = function () {};
+    api.clearGestures = function () {};
+    api.setPaused = function () {};
+    api.dispose = function () {};
+    api.resize = function () {};
     api.ready = Promise.resolve(false);
     return api;
   }
@@ -595,12 +601,12 @@ export function createHumanAvatar(options) {
         renderer.setClearColor(0x000000, 0);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
       } catch (e) {
-        console.warn('[avatar] WebGL 初始化失败，回退静态图', e);
+        console.warn('[avatar] WebGL 初始化失败，返回 false 由调用方处理', e);
         resolve(false);
         return;
       }
 
-      // shaded 模型以贴图自发光为主，灯光只影响将来的 PBR 版本
+      // 模型以贴图自发光为主，灯光只影响将来的 PBR 版本
       scene.add(new THREE.AmbientLight(0xffffff, 1.4));
       const hemi = new THREE.HemisphereLight(0xffffff, 0xa89880, 1.1);
       scene.add(hemi);
@@ -667,7 +673,7 @@ export function createHumanAvatar(options) {
         },
         undefined,
         function (err) {
-          console.warn('[avatar] 数字人模型加载失败，回退静态图', err);
+          console.warn('[avatar] 数字人模型加载失败，返回 false', err);
           dispose();
           resolve(false);
         }
@@ -682,6 +688,7 @@ export function createHumanAvatar(options) {
   }
 
   function dispose() {
+    if (disposed) return;
     disposed = true;
     if (rafId) cancelAnimationFrame(rafId);
     rafId = 0;

@@ -8,7 +8,7 @@ const ADMIN_PASS = process.env.E2E_ADMIN_PASS || 'zhijiansu@admin';
 const USER = process.env.E2E_USER || 'demo';
 const PASS = process.env.E2E_PASS || '123456';
 const HUMAN_NAME = 'E2E数字人' + Date.now().toString().slice(-6);
-const GLB_PATH = path.join(__dirname, '..', '..', 'frontend', 'models', 'avatar', 'shaded.glb');
+const GLB_PATH = path.join(__dirname, '..', '..', 'assets', 'digital-human-samples', 'shaded.glb');
 
 test('后台数字人上传/预览/启用 → Studio 加载 → 删除回退', async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', '桌面链路');
@@ -67,8 +67,26 @@ test('后台数字人上传/预览/启用 → Studio 加载 → 删除回退', a
       return el ? getComputedStyle(el).backgroundColor : '';
     });
     expect(background).toBe('rgb(243, 235, 224)');
+
+    // 5. 删除启用项 -> 前台空状态，且不再请求默认模型/默认海报
+    const defaultAssetRequests = [];
+    page.on('request', function (req) {
+      const url = req.url();
+      if (url.indexOf('models/avatar/shaded.glb') >= 0 || url.indexOf('studio-digital-human.jpg') >= 0) {
+        defaultAssetRequests.push(url);
+      }
+    });
+    await request.delete(API + '/api/admin/digital-humans/' + humanId, {
+      headers: { Authorization: 'Bearer ' + adminToken }
+    });
+    humanId = '';
+    await page.reload();
+    await expect(page.locator('#studio-human')).toHaveClass(/is-empty/, { timeout: 20_000 });
+    await expect(page.locator('#studio-human-empty')).toBeVisible();
+    await expect(page.locator('#human-actions-idle')).toBeHidden();
+    expect(defaultAssetRequests).toEqual([]);
   } finally {
-    // 5. 清理测试数字人（即使断言失败也尽量删除）
+    // 6. 清理测试数字人（即使断言失败也尽量删除）
     if (humanId && adminToken) {
       await request.delete(API + '/api/admin/digital-humans/' + humanId, {
         headers: { Authorization: 'Bearer ' + adminToken }

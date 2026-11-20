@@ -1996,7 +1996,7 @@
     if (!wrap) return;
     if (!list.length) {
       wrap.innerHTML =
-        '<p class="empty-hint">暂无数字人。未启用时，前端继续使用默认形象。</p>';
+        '<p class="empty-hint">暂无数字人。未启用时前端显示“数字人暂未配置”。</p>';
       return;
     }
     wrap.innerHTML =
@@ -2088,7 +2088,7 @@
       btn.addEventListener('click', function () {
         var id = btn.getAttribute('data-del-human');
         var human = findHuman(id);
-        if (!confirm('确定删除「' + (human ? human.name : '') + '」？\n模型、背景图和缩略图会一起删除；若正在前端使用，将回退默认形象。')) return;
+        if (!confirm('确定删除「' + (human ? human.name : '') + '」？\n模型、背景图和缩略图会一起删除；若正在前端使用，前台将显示“数字人暂未配置”。')) return;
         api('/api/admin/digital-humans/' + encodeURIComponent(id), { method: 'DELETE' })
           .then(function () {
             if (editingHuman && editingHuman.id === id) closeHumanForm();
