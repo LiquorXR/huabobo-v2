@@ -187,7 +187,7 @@ async function req(method, path, body, token) {
 
   // 数字人管理：真实 GLB、单活、背景、性别与删除
   const humanGlb = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'frontend', 'models', 'avatar', 'shaded.glb')
+    path.join(__dirname, '..', '..', 'assets', 'digital-human-samples', 'shaded.glb')
   );
   const humanFiles = {
     glb: { data: humanGlb, type: 'model/gltf-binary', filename: 'shaded.glb' }
